@@ -340,6 +340,59 @@ body.se-site.se-site[data-se-page=pos] .pos-shortcuts ul{margin:0;padding-left:2
 body.se-site.se-site[data-se-page=pos] .pos-shortcuts kbd{display:inline-block;min-width:28px;padding:0 6px;border:1.5px solid var(--se-border);border-bottom-width:3px;border-radius:6px;background:var(--se-surface);color:var(--se-ink);font:600 13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-align:center}
 body.se-site.se-site[data-se-page=pos] main .note{max-width:none}
 
+/* ---------- 多門市：門市切換、庫存篩選、登入選門市 ---------- */
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-store{flex:1 1 auto;justify-content:flex-start;gap:10px;min-width:0;max-width:max-content;margin-right:auto;padding:0 14px 0 10px;border-color:transparent;background:transparent;font:700 20px/1.3 var(--se-font);letter-spacing:-.01em;color:var(--se-ink)}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-store span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-store::after{content:'';flex:none;width:8px;height:8px;margin:-4px 0 0 2px;border:solid currentColor;border-width:0 2px 2px 0;transform:rotate(45deg);opacity:.55}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-store .pos-ico{flex:none;width:22px;height:22px;color:var(--pos-accent)}
+@media(hover:hover){body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-store:hover{background:var(--pos-surface-2)}}
+body.se-site.se-site[data-se-page=pos] .pos-head-note{display:inline-block;margin-left:10px;padding:2px 12px;border-radius:999px;background:var(--pos-accent-soft);color:var(--pos-accent);font-size:15px;font-weight:700;vertical-align:middle}
+body.se-site.se-site[data-se-page=pos] .pos-stock-filters{align-items:flex-end}
+body.se-site.se-site[data-se-page=pos] .pos-select{display:flex;flex-direction:column;gap:4px;flex:1 1 180px;min-width:0;max-width:280px}
+body.se-site.se-site[data-se-page=pos] .pos-select>span{font-size:13px;font-weight:700;color:var(--se-muted)}
+body.se-site.se-site[data-se-page=pos] .pos-stock-table td small{display:block}
+body.se-site.se-site[data-se-page=pos] .pos-supplier-row{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto}
+body.se-site.se-site[data-se-page=pos] .pos-store-rows{display:flex;flex-direction:column}
+body.se-site.se-site[data-se-page=pos] .pos-store-row{display:flex;flex-direction:column;gap:12px;padding:14px 0;border-bottom:1px dashed var(--pos-line)}
+body.se-site.se-site[data-se-page=pos] .pos-store-row:first-child{padding-top:4px}
+body.se-site.se-site[data-se-page=pos] .pos-store-row .pos-tag{margin-left:8px;font-style:normal;vertical-align:middle}
+body.se-site.se-site[data-se-page=pos] dialog.pos-dialog-login{width:min(760px,calc(100vw - 32px))}
+body.se-site.se-site[data-se-page=pos] .pos-login-label{margin:18px 0 10px;font-size:16px;font-weight:800}
+body.se-site.se-site[data-se-page=pos] .pos-login-stores{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-login-store{flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:4px;min-height:132px;padding:16px 18px;border:2px solid var(--pos-line);border-radius:var(--pos-radius);text-align:left;white-space:normal}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-login-store .pos-ico{width:30px;height:30px;margin-bottom:6px;color:var(--pos-accent)}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-login-store b{font-size:19px;line-height:1.35}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-login-store small{font-size:13px;font-weight:500;color:var(--se-muted)}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-login-store .pos-login-shift[data-open=true]{color:var(--se-success);font-weight:700}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-login-store[aria-pressed=true]{border-color:var(--pos-accent);background:var(--pos-accent-soft);box-shadow:0 0 0 2px var(--pos-accent) inset}
+body.se-site.se-site[data-se-page=pos] .pos-login-cashiers{flex-wrap:wrap}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-login-go{min-width:220px;min-height:56px;font-size:18px}
+@media(max-width:739px){
+ body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-store{gap:6px;font-size:17px;padding:0 10px 0 4px}
+ body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-store .pos-ico{display:none}
+ body.se-site.se-site[data-se-page=pos] .pos-tile b{font-size:23px}
+ body.se-site.se-site[data-se-page=pos] .pos-select{flex-basis:calc(50% - 6px);max-width:none}
+ body.se-site.se-site[data-se-page=pos] .pos-supplier-row{grid-template-columns:minmax(0,1fr) auto}
+ body.se-site.se-site[data-se-page=pos] .pos-supplier-row input:nth-child(2){grid-column:1}
+ body.se-site.se-site[data-se-page=pos] .pos-login-stores{grid-template-columns:1fr}
+ body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-login-store{min-height:96px}
+ body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-login-go{flex:1;min-width:0}
+}
+
+/* ---------- 網頁版試用提醒（只在網站頁面，App 與桌面版不會顯示） ---------- */
+body.se-site.se-site[data-se-page=pos] .pos-trial{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px 24px;padding:20px 24px;border:1.5px solid var(--v3-line);border-radius:12px;background:var(--se-warning-bg);box-shadow:4px 4px 0 var(--v3-shadow)}
+body.se-site.se-site[data-se-page=pos] .pos-trial-text{flex:1 1 420px;min-width:0}
+body.se-site.se-site[data-se-page=pos] .pos-trial-kicker{display:inline-block;margin:0 0 6px;padding:2px 12px;border-radius:999px;background:var(--v3-yolk);color:var(--v3-on-yolk);font:800 13px/1.6 var(--se-font)}
+body.se-site.se-site[data-se-page=pos] .pos-trial h2{margin:0 0 6px;font:800 21px/1.4 var(--se-font);color:var(--se-ink);letter-spacing:-.01em}
+body.se-site.se-site[data-se-page=pos] .pos-trial-text p:last-child{margin:0;font-size:15px;line-height:1.75;color:var(--se-ink)}
+body.se-site.se-site[data-se-page=pos] .pos-trial-actions{display:flex;flex-wrap:wrap;gap:10px}
+body.se-site.se-site[data-se-page=pos] .pos-trial-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 22px;border:1.5px solid var(--v3-line);border-radius:10px;font:700 16px/1.3 var(--se-font);text-decoration:none;white-space:nowrap;transition:transform .12s ease,box-shadow .12s ease}
+body.se-site.se-site[data-se-page=pos] .pos-trial-actions a.pos-trial-primary{background:var(--se-green);color:#fff;box-shadow:3px 3px 0 var(--v3-shadow)}
+body.se-site.se-site[data-se-page=pos] .pos-trial-actions a.pos-trial-secondary{background:var(--se-surface);color:var(--se-ink)}
+body.se-site.se-site[data-se-page=pos] .pos-trial-actions a:active{transform:translate(3px,3px);box-shadow:0 0 0 transparent}
+body.se-site.se-site[data-se-page=pos] .pos-trial-actions a:focus-visible{outline:3px solid var(--se-focus);outline-offset:3px}
+@media(max-width:739px){body.se-site.se-site[data-se-page=pos] .pos-trial{padding:16px}body.se-site.se-site[data-se-page=pos] .pos-trial-actions,body.se-site.se-site[data-se-page=pos] .pos-trial-actions a{width:100%}}
+
 /* ---------- 安裝成 App（網站頁面） ---------- */
 body.se-site.se-site[data-se-page=pos] .pos-install{display:flex;flex-direction:column;gap:14px;padding:22px;border:1.5px solid var(--v3-line);border-radius:12px;background:var(--v3-paper);box-shadow:4px 4px 0 var(--v3-shadow)}
 body.se-site.se-site[data-se-page=pos] .pos-install h2{margin:0;font:700 22px/1.4 var(--se-font);color:var(--se-ink);letter-spacing:-.01em}

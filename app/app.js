@@ -13,9 +13,9 @@
  const desktop=/\bSamEggPOS\//.test(navigator.userAgent);
 
  // ---------- 資料 ----------
- const S={settings:{...P.DEFAULT_SETTINGS},categories:[],products:[],members:[],held:[],shifts:[],closes:[],promos:[],seq:null,orders:[],moves:[]};
- const KV=['settings','categories','products','members','held','shifts','closes','promos','seq'];
- const ui={promoQ:'',view:'sale',cat:'all',q:'',orders:{range:'today',q:''},products:{q:'',cat:'all'},stock:{filter:'all',q:''},members:{q:''},reports:{range:'today',from:today(),to:today()},close:{day:today()},giftMode:false};
+ const S={settings:{...P.DEFAULT_SETTINGS},stores:[],suppliers:[],categories:[],products:[],members:[],held:[],shifts:[],closes:[],promos:[],seq:null,orders:[],moves:[]};
+ const KV=['settings','stores','suppliers','categories','products','members','held','shifts','closes','promos','seq'];
+ const ui={promoQ:'',view:'sale',cat:'all',q:'',orders:{range:'today',q:''},products:{q:'',cat:'all'},stock:{filter:'all',q:'',store:'',cat:'all',brand:'all',supplier:'all'},scope:'store',members:{q:''},reports:{range:'today',from:today(),to:today()},close:{day:today()},giftMode:false};
  let cart={lines:[],discount:null,pointsUse:0,memberId:''},pay=null,memoryOnly=false;
 
  const request=req=>new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
@@ -64,15 +64,19 @@
  function seedDemo(){
   const cats=['飲料','零食點心','麵包烘焙','生活用品','文具'].map(name=>({id:uid(),name}));
   const rows=[
-   ['礦泉水 600ml',0,20,9,48],['無糖綠茶',0,25,13,36],['鮮奶茶',0,35,19,24],['美式咖啡',0,45,18,30],['拿鐵咖啡',0,60,27,30],['柳橙汁',0,40,22,4],
-   ['海鹽洋芋片',1,35,20,20],['巧克力餅乾',1,45,26,18],['綜合堅果',1,89,55,12],['水果軟糖',1,30,16,25],['蘇打餅',1,39,22,3],
-   ['菠蘿麵包',2,35,15,10],['奶油可頌',2,45,20,8],['鮮奶吐司',2,65,34,6],['肉鬆麵包',2,40,18,0],
-   ['抽取式衛生紙',3,29,18,40],['濕紙巾',3,39,22,22],['洗手乳',3,99,58,9],['3 號電池 4 入',3,129,80,14],
-   ['原子筆',4,15,6,60],['筆記本 A5',4,49,25,16],['便利貼',4,35,17,20]
+   ['礦泉水 600ml',0,20,9,48,'清泉'],['無糖綠茶',0,25,13,36,'山茶園'],['鮮奶茶',0,35,19,24,'山茶園'],['美式咖啡',0,45,18,30,'蛋蛋咖啡'],['拿鐵咖啡',0,60,27,30,'蛋蛋咖啡'],['柳橙汁',0,40,22,4,'果園'],
+   ['海鹽洋芋片',1,35,20,20,'脆脆'],['巧克力餅乾',1,45,26,18,'脆脆'],['綜合堅果',1,89,55,12,'好果仁'],['水果軟糖',1,30,16,25,'好果仁'],['蘇打餅',1,39,22,3,'脆脆'],
+   ['菠蘿麵包',2,35,15,10,'蛋蛋烘焙'],['奶油可頌',2,45,20,8,'蛋蛋烘焙'],['鮮奶吐司',2,65,34,6,'蛋蛋烘焙'],['肉鬆麵包',2,40,18,0,'蛋蛋烘焙'],
+   ['抽取式衛生紙',3,29,18,40,'柔柔'],['濕紙巾',3,39,22,22,'柔柔'],['洗手乳',3,99,58,9,'淨淨'],['3 號電池 4 入',3,129,80,14,'電力'],
+   ['原子筆',4,15,6,60,'書寫'],['筆記本 A5',4,49,25,16,'書寫'],['便利貼',4,35,17,20,'書寫']
   ];
+  // 示範兩家門市：台中門市的庫存大約是台北的一半。廠商依分類分配（名稱都是示範用）。
+  S.stores=[{id:'main',name:'台北門市',address:'',phone:''},{id:'tc',name:'台中門市',address:'',phone:''}];
+  S.suppliers=['晨光飲品','好味食品','麥香烘焙坊','日日生活用品'].map((name,i)=>({id:uid()+'s'+i,name,phone:'',note:'示範廠商'}));
+  const vendor=[0,1,2,3,3];
   S.categories=cats;
-  S.products=rows.map(([name,cat,price,cost,stock],i)=>({id:uid()+i,name,sku:P.ean13('20000000'+String(i+1).padStart(4,'0')),categoryId:cats[cat].id,price,cost,track:true,stock,lowStock:5,active:true}));
-  S.products.push({id:uid()+'bag',name:'購物袋',sku:P.ean13('200000009001'),categoryId:cats[3].id,price:2,cost:1,track:false,stock:0,lowStock:0,active:true});
+  S.products=rows.map(([name,cat,price,cost,stock,brand],i)=>({id:uid()+i,name,sku:P.ean13('20000000'+String(i+1).padStart(4,'0')),categoryId:cats[cat].id,brand,supplierId:S.suppliers[vendor[cat]].id,price,cost,track:true,stocks:{main:stock,tc:Math.floor(stock/2)},lowStock:5,active:true}));
+  S.products.push({id:uid()+'bag',name:'購物袋',sku:P.ean13('200000009001'),categoryId:cats[3].id,brand:'',supplierId:S.suppliers[3].id,price:2,cost:1,track:false,stocks:{},lowStock:0,active:true});
   S.members=[
    {id:uid()+'m',name:'王小明',code:'M0001',phone:'0912345678',points:120,total:0,visits:0,note:'示範會員',createdAt:Date.now()},
    {id:uid()+'g',name:'陳美玲',code:'M0002',phone:'0933222111',points:860,total:23800,visits:41,note:'示範會員（金卡）',createdAt:Date.now()}
@@ -86,32 +90,68 @@
   S.settings={...P.DEFAULT_SETTINGS,methods:P.DEFAULT_METHODS.map(m=>({...m})),cashiers:['店長'],demo:true};
   S.held=[];S.shifts=[];S.closes=[];S.seq=null;S.orders=[];S.moves=[];
  }
+ // 舊資料沒有門市：用設定裡的門市名稱建立第一家門市，原本的庫存都歸到這家。回傳有沒有改到資料。
+ function normalize(){
+  let changed=false;
+  if(!Array.isArray(S.stores))S.stores=[];
+  if(!Array.isArray(S.suppliers))S.suppliers=[];
+  if(!S.stores.length){S.stores=[{id:'main',name:S.settings.storeName||'我的門市',address:S.settings.storeAddress||'',phone:S.settings.storePhone||''}];changed=true;}
+  if(P.migrateStocks(S.products,S.stores[0].id))changed=true;
+  return changed;
+ }
  async function boot(){
   try{
    await store.open();
    if(!(await readAll())){seedDemo();await commit(kvOps(...KV));}
+   if(normalize())await save('stores','suppliers','products');
    // 舊版預設叫「行動支付」，現在統一叫「電子支付」；自己改過名稱的不動。
    const mobile=S.settings.methods.find(m=>m.id==='mobile'&&m.name==='行動支付');
    if(mobile){mobile.name='電子支付';await save('settings');}
    navigator.storage?.persist?.().catch(()=>{});
   }catch{
-   memoryOnly=true;store.db=null;seedDemo();
+   memoryOnly=true;store.db=null;seedDemo();normalize();
   }
   loadCart();
   channel?.addEventListener('message',async()=>{
    // 另一個分頁改了資料：重新讀取，保留這個分頁正在結的帳。
    if(!store.db)return;
-   try{await readAll();if(cart.memberId&&!member())cart.memberId='';if(!dialog.open)render();updateBar();}catch{}
+   try{await readAll();normalize();if(cart.memberId&&!member())cart.memberId='';if(!dialog.open)render();updateBar();}catch{}
   });
+  // 這個分頁選過的門市；沒選過時先用上次選的門市，桌面版或多門市再請收銀員確認。
+  const chosen=remembered('sessionStorage');
+  storeId=storeOf(chosen)?chosen:remembered('localStorage');
   app.dataset.ready='true';
   render();updateBar();setInterval(updateBar,30000);
+  if(!storeOf(chosen)&&(desktop||multiStore()))openLogin(false);
  }
 
  // ---------- 小工具 ----------
  const member=()=>S.members.find(m=>m.id===cart.memberId)||null;
  const product=id=>S.products.find(p=>p.id===id)||null;
  const catName=id=>S.categories.find(c=>c.id===id)?.name||'';
- const currentShift=()=>S.shifts.find(s=>!s.closedAt)||null;
+ const supplierName=id=>S.suppliers.find(s=>s.id===id)?.name||'';
+ // 例如「台北門市 30・台中門市 15」
+ const stockText=p=>S.stores.map(s=>s.name+' '+P.stockAt(p,s.id)).join('・');
+ // 這個分頁（或這次開啟的桌面版）在哪一家門市收銀；記在 sessionStorage，關掉重開要再選一次。
+ const STORE_KEY='samegg-pos-store';
+ let storeId='';
+ const remembered=area=>{try{return window[area].getItem(STORE_KEY)||'';}catch{return '';}};
+ const storeOf=id=>S.stores.find(s=>s.id===id)||null;
+ const cur=()=>storeOf(storeId)?storeId:(S.stores[0]?.id||'main');
+ const curStore=()=>storeOf(cur())||{id:'main',name:S.settings.storeName,address:'',phone:''};
+ const storeName=id=>storeOf(id)?.name||'';
+ const multiStore=()=>S.stores.length>1;
+ // 檔名只用英數字（瀏覽器會把中文檔名改成 download）：第 1 家門市是 store1；門市名稱寫在檔案內容裡。
+ const fileTag=id=>multiStore()?(id==='all'?'all-stores':'store'+(S.stores.findIndex(s=>s.id===id)+1))+'-':'';
+ // 沒有門市欄位的舊紀錄算第一家門市。
+ const sid=record=>record&&storeOf(record.storeId)?record.storeId:(record&&record.storeId)||S.stores[0]?.id||'main';
+ const here=record=>sid(record)===cur();
+ const qtyHere=p=>P.stockAt(p,cur());
+ function chooseStore(id){storeId=id;for(const area of ['sessionStorage','localStorage'])try{window[area].setItem(STORE_KEY,id);}catch{}}
+ const scoped=list=>ui.scope==='all'&&multiStore()?list:list.filter(here);
+ const heldHere=()=>S.held.filter(here);
+ const dayOf=day=>P.daySummary(S.orders.filter(here),S.shifts.filter(here),day);
+ const currentShift=()=>S.shifts.find(s=>!s.closedAt&&here(s))||null;
  const totals=()=>P.computeCart(cart,S.settings,member(),S.promos,Date.now());
  // 現在可以賣的禮包（活動進行中，而且裡面的商品都還在）。
  const activeBundles=()=>P.activePromos(S.promos,Date.now()).bundles.map(promo=>({promo,line:P.bundleLine(promo,S.products)})).filter(b=>b.line);
@@ -146,8 +186,8 @@
   link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
  }
  const downloadCsv=(name,rows)=>download(name,P.toCsv(rows),'text/csv;charset=utf-8');
- function addMove(ops,p,type,delta,note,ref){
-  const move={id:uid(),t:Date.now(),pid:p.id,name:p.name,type,qty:delta,after:p.stock,note:note||'',ref:ref||''};
+ function addMove(ops,p,type,delta,note,ref,at=cur()){
+  const move={id:uid(),t:Date.now(),pid:p.id,name:p.name,type,qty:delta,after:P.stockAt(p,at),storeId:at,storeName:storeName(at),note:note||'',ref:ref||''};
   S.moves.push(move);ops.push(['moves','put',move]);
  }
  function rangeDates(range,custom){
@@ -160,6 +200,8 @@
   if(range==='custom'&&custom){const from=custom.from||t,to=custom.to||t;return from<=to?[from,to]:[to,from];}
   return [t,t];
  }
+ // 訂單與報表可以只看這家門市，或看全部門市（只有一家門市時不顯示）。
+ const scopeChips=()=>multiStore()?`<div class="pos-chips" role="group" aria-label="門市範圍">${[['store',curStore().name],['all','全部門市']].map(([id,label])=>`<button type="button" class="pos-chip" data-act="scope" data-id="${id}" aria-pressed="${ui.scope===id}">${h(label)}</button>`).join('')}</div>`:'';
  const RANGES=[['today','今天'],['yesterday','昨天'],['7d','近 7 天'],['month','本月'],['lastmonth','上月'],['all','全部']];
  const rangeChips=(current,act)=>'<div class="pos-chips" role="group" aria-label="日期範圍">'+RANGES.map(([id,label])=>`<button type="button" class="pos-chip" data-act="${act}" data-range="${id}" aria-pressed="${current===id}">${label}</button>`).join('')+'</div>';
  const empty=text=>`<p class="pos-empty">${h(text)}</p>`;
@@ -178,6 +220,8 @@
   tag:'<path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z"/><circle cx="7.5" cy="7.5" r="1"/>',
   trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
   gift:'<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7M7.5 8a2.5 2.5 0 0 1 0-5C9.5 3 12 8 12 8s2.5-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+  store:'<path d="M3 9 4.5 4h15L21 9M3 9h18v1.5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0zM5 12.5V20h14v-7.5M10 20v-4.5h4V20"/>',
+  swap:'<path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/>',
   percent:'<path d="M19 5 5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
   inbox:'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>'
  };
@@ -189,10 +233,10 @@
  const statusTag=order=>`<span class="pos-tag pos-tag-${order.status}">${P.STATUS[order.status]||''}</span>`;
 
  // ---------- 對話框 ----------
- function openDialog({title,body,footer='',form='',size=''}){
+ function openDialog({title,body,footer='',form='',size='',closable=true}){
   dialog.className='pos-dialog'+(size?' pos-dialog-'+size:'');
   const carry=toastBox.parentElement===dialog;
-  dialog.innerHTML=`<form class="pos-dialog-form" data-form="${form}" novalidate><header class="pos-dialog-head"><h2>${h(title)}</h2><button type="button" class="pos-icon" data-act="close-dialog" aria-label="關閉">✕</button></header><div class="pos-dialog-body">${body}</div>${footer?`<footer class="pos-dialog-foot">${footer}</footer>`:''}</form>`;
+  dialog.innerHTML=`<form class="pos-dialog-form" data-form="${form}" novalidate><header class="pos-dialog-head"><h2>${h(title)}</h2>${closable?'<button type="button" class="pos-icon" data-act="close-dialog" aria-label="關閉">✕</button>':''}</header><div class="pos-dialog-body">${body}</div>${footer?`<footer class="pos-dialog-foot">${footer}</footer>`:''}</form>`;
   if(!dialog.open)dialog.showModal();
   if(carry||toastBox.classList.contains('is-on'))dialog.append(toastBox);
   const first=$('[autofocus]',dialog);if(first){first.focus();first.select?.();}
@@ -211,6 +255,33 @@
  const field=(label,control,hint='')=>`<label class="pos-field"><span>${label}</span>${control}${hint?`<small>${hint}</small>`:''}</label>`;
  const errorBox='<p class="pos-form-error" role="alert" hidden></p>';
 
+ // ---------- 登入：選門市與收銀員 ----------
+ // 桌面版每次打開、或有兩家以上門市時，先選在哪一家門市收銀。這是選擇，不是密碼登入。
+ const login={store:'',cashier:'',required:false};
+ function openLogin(closable){
+  login.store=cur();login.cashier=S.settings.cashiers.includes(S.settings.cashier)?S.settings.cashier:S.settings.cashiers[0];login.required=!closable;
+  const shiftOf=id=>S.shifts.find(s=>!s.closedAt&&sid(s)===id);
+  openDialog({title:'登入收銀台',form:'login',size:'login',closable,body:`<p class="pos-hint">選好門市和收銀員就可以開始。收銀、庫存、交班與日結都會記在這家門市。</p>
+<h3 class="pos-login-label">門市</h3><div class="pos-login-stores" role="group" aria-label="門市">${S.stores.map(st=>{const open=shiftOf(st.id);return `<button type="button" class="pos-login-store" data-act="login-store" data-id="${h(st.id)}" aria-pressed="${st.id===login.store}">${icon('store')}<b>${h(st.name)}</b><small>${h(st.address)||'未填地址'}</small><small class="pos-login-shift" data-open="${!!open}">${open?'營業中・'+h(open.cashier):'尚未開班'}</small></button>`;}).join('')}</div>
+<h3 class="pos-login-label">收銀員</h3><div class="pos-chips pos-login-cashiers" role="group" aria-label="收銀員">${S.settings.cashiers.map(c=>`<button type="button" class="pos-chip" data-act="login-cashier" data-id="${h(c)}" aria-pressed="${c===login.cashier}">${h(c)}</button>`).join('')}</div>
+<p class="pos-hint">門市和收銀員名單在「設定」修改。資料只存在這台${desktop?'電腦':'裝置'}，不同裝置之間不會同步。</p>`,
+   footer:`${closable?'<button type="button" data-act="close-dialog">取消</button>':''}<button type="submit" class="pos-primary pos-login-go">開始收銀</button>`});
+  $('.pos-login-store[aria-pressed=true]',dialog)?.focus();
+ }
+ function pickLogin(kind,el){
+  login[kind]=el.dataset.id;
+  for(const b of $$(`[data-act=login-${kind}]`,dialog))b.setAttribute('aria-pressed',b===el);
+ }
+ function saveLogin(){
+  const st=storeOf(login.store)||curStore();
+  chooseStore(st.id);login.required=false;
+  if(login.cashier&&S.settings.cashier!==login.cashier){S.settings.cashier=login.cashier;save('settings');}
+  closeDialog();toast(`${st.name}・${S.settings.cashier}，開始收銀`);render();updateBar();
+  return true;
+ }
+ // 第一次登入不能按 Esc 跳過。
+ dialog.addEventListener('cancel',event=>{if(login.required)event.preventDefault();});
+
  // ---------- 上方工作列 ----------
  const VIEWS=[['sale','收銀'],['orders','訂單'],['products','商品'],['stock','庫存'],['members','會員'],['promos','優惠'],['shift','交班'],['close','日結'],['reports','報表'],['settings','設定']];
  function updateBar(){
@@ -218,7 +289,7 @@
   const shift=currentShift(),chip=$('#pos-shift-chip'),now=new Date();
   chip.textContent=shift?'營業中・'+shift.cashier:'尚未開班';chip.dataset.open=!!shift;
   $('#pos-clock').textContent=P.formatTime(now).slice(5);
-  $('#pos-store').textContent=S.settings.storeName;
+  const label=$('#pos-store');label.innerHTML=icon('store')+'<span>'+h(curStore().name)+'</span>';label.title=multiStore()?'切換門市或收銀員':'切換收銀員';
  }
  function show(name){ui.view=name;render();updateBar();view.scrollTop=0;}
  function render(){
@@ -249,8 +320,8 @@ ${ui.giftMode?`<div class="pos-banner pos-banner-gift"><p><b>贈品模式</b>：
   const bundles=ui.cat==='all'||ui.cat==='bundles'?activeBundles().filter(b=>P.matchProduct({name:b.line.name,sku:''},ui.q)):[];
   if(!list.length&&!bundles.length){grid.innerHTML=empty(S.products.length?'找不到符合的商品':'還沒有商品，到「商品」頁新增第一個商品');return;}
   grid.innerHTML=list.slice(0,150).map(p=>{
-   const out=p.track&&p.stock<=0,low=!out&&P.isLowStock(p),promo=P.promoFor(p.id,S.promos,time);
-   const stock=p.track?`<small class="pos-item-stock">${out?'缺貨':'剩 '+p.stock}</small>`:'';
+   const q=qtyHere(p),out=p.track&&q<=0,low=!out&&P.isLowStock(p,q),promo=P.promoFor(p.id,S.promos,time);
+   const stock=p.track?`<small class="pos-item-stock">${out?'缺貨':'剩 '+q}</small>`:'';
    let price=`<b>${money(p.price)}</b>`;
    if(promo&&promo.promo.type==='sale'){
     const v=promo.promo.value,unit=promo.promo.mode==='price'?Math.min(p.price,Math.max(0,Math.round(Number(v)||0))):p.price-Math.round(p.price*Math.min(100,Math.max(0,Number(v)||0))/100);
@@ -262,7 +333,7 @@ ${ui.giftMode?`<div class="pos-banner pos-banner-gift"><p><b>贈品模式</b>：
  function renderCart(){
   const box=$('#pos-cart');if(!box)return;
   const t=totals(),m=member(),taxLabel=S.settings.taxMode==='included'?`內含營業稅 ${S.settings.taxRate}%`:S.settings.taxMode==='added'?`營業稅 ${S.settings.taxRate}%`:'';
-  box.innerHTML=`<div class="pos-cart-head"><h2>購物車${t.qty?`<span class="pos-cart-count">${t.qty}</span>`:''}</h2><div class="pos-cart-tools">${m?'':`<button type="button" class="pos-soft pos-scan-member" data-act="pick-member">${icon('user')}<span>掃會員</span></button>`}<button type="button" class="pos-soft" data-act="held">${icon('inbox')}<span>取單</span>${S.held.length?`<b class="pos-count">${S.held.length}</b>`:''}</button></div></div>
+  box.innerHTML=`<div class="pos-cart-head"><h2>購物車${t.qty?`<span class="pos-cart-count">${t.qty}</span>`:''}</h2><div class="pos-cart-tools">${m?'':`<button type="button" class="pos-soft pos-scan-member" data-act="pick-member">${icon('user')}<span>掃會員</span></button>`}<button type="button" class="pos-soft" data-act="held">${icon('inbox')}<span>取單</span>${heldHere().length?`<b class="pos-count">${heldHere().length}</b>`:''}</button></div></div>
 ${m?memberCard(m,t.level):''}
 ${t.lines.length?`<ol class="pos-lines">${t.lines.map((line,i)=>`<li class="pos-line"><button type="button" class="pos-line-main" data-act="edit-line" data-i="${i}" aria-label="修改 ${h(line.name)}"><span class="pos-line-name">${h(line.name)}</span><span class="pos-line-sub">${money(line.price)}${line.discount?` <em>${h(P.discountLabel(line.discount))}</em>`:''}${line.note?` ・${h(line.note)}`:''}</span>${line.bundle?`<span class="pos-line-items">${h(line.bundle.items.map(x=>x.name+'×'+x.qty*line.qty).join('、'))}</span>`:''}${line.promoLabel?`<span class="pos-line-tag is-promo">${h(line.promoLabel)}</span>`:''}${line.gift?`<span class="pos-line-tag is-gift">贈品・${h(line.giftReason||'贈品')}</span>`:''}</button><div class="pos-qty"><button type="button" data-act="qty" data-i="${i}" data-d="-1" aria-label="${h(line.name)} 減一">−</button><output aria-label="數量">${line.qty}</output><button type="button" data-act="qty" data-i="${i}" data-d="1" aria-label="${h(line.name)} 加一">＋</button></div><span class="pos-line-total">${money(line.net)}</span></li>`).join('')}</ol>`:`<div class="pos-cart-empty">${icon('cart','pos-cart-empty-icon')}<p>點選左邊的商品<br>或直接掃描條碼</p></div>`}
 <dl class="pos-totals">
@@ -294,9 +365,9 @@ ${taxLabel?`<div class="pos-tax"><dt>${taxLabel}</dt><dd>${money(t.tax)}</dd></d
   const need=stockNeeds([...cart.lines,b.line]);
   for(const item of b.line.bundle.items){
    const p=product(item.pid);
-   if(p?.track&&need.get(p.id)>p.stock){
+   if(p?.track&&need.get(p.id)>qtyHere(p)){
     if(S.settings.blockOversell){beep(false);toast(`「${p.name}」庫存不足，禮包無法再加`,'error');return;}
-    toast(`提醒：「${p.name}」庫存只剩 ${p.stock}`,'warn');break;
+    toast(`提醒：「${p.name}」庫存只剩 ${qtyHere(p)}`,'warn');break;
    }
   }
   const gift=ui.giftMode;
@@ -306,9 +377,9 @@ ${taxLabel?`<div class="pos-tax"><dt>${taxLabel}</dt><dd>${money(t.tax)}</dd></d
  }
  function addProduct(p){
   const inCart=stockNeeds(cart.lines).get(p.id)||0,gift=ui.giftMode;
-  if(p.track&&inCart+1>p.stock){
+  if(p.track&&inCart+1>qtyHere(p)){
    if(S.settings.blockOversell){beep(false);toast(`「${p.name}」庫存不足，無法再加`,'error');return;}
-   toast(`提醒：「${p.name}」庫存只剩 ${p.stock}`,'warn');
+   toast(`提醒：「${p.name}」庫存只剩 ${qtyHere(p)}`,'warn');
   }
   const line=cart.lines.find(l=>l.pid===p.id&&!l.discount&&!l.note&&l.price===p.price&&!l.bundle&&!!l.gift===gift);
   if(line)line.qty++;else cart.lines.push({pid:p.id,name:p.name,sku:p.sku||'',cat:catName(p.categoryId),price:p.price,cost:p.cost||0,qty:1,discount:null,note:'',...(gift?{gift:true,giftReason:'門市送禮'}:{})});
@@ -385,17 +456,18 @@ ${cashRow>=0?`<div class="pos-chips pos-quick" aria-label="現金快速鍵">${P.
   if(taxId&&!P.validTaxId(taxId)){form.elements.taxId.focus();return formError(form,'統一編號格式不正確，請再確認 8 碼數字');}
   if(carrier&&!P.validCarrier(carrier)){form.elements.carrier.focus();return formError(form,'載具格式不正確，手機條碼是「/」加 7 碼');}
   if(S.settings.blockOversell){
-   for(const [pid,need] of stockNeeds(t.lines)){const p=product(pid);if(p?.track&&need>p.stock)return formError(form,`「${p.name}」庫存只剩 ${p.stock}，請調整數量`);}
+   for(const [pid,need] of stockNeeds(t.lines)){const p=product(pid);if(p?.track&&need>qtyHere(p))return formError(form,`「${p.name}」庫存只剩 ${qtyHere(p)}，請調整數量`);}
   }
   const time=Date.now(),next=P.nextOrderId(S.seq,time),m=member(),shift=currentShift();
   let order;
   try{order=P.buildOrder({id:next.id,time,cart,settings:S.settings,member:m,payments:s.payments,cashier:shift?.cashier||S.settings.cashier,shiftId:shift?.id||'',buyerTaxId:taxId,carrier,note:form.elements.note.value.trim(),promos:S.promos});}
   catch(error){return formError(form,error.message);}
+  Object.assign(order,{storeId:cur(),storeName:curStore().name});
   const ops=[['orders','put',order]];
   S.seq=next.seq;S.orders.push(order);
   for(const line of order.lines){
    const parts=line.bundle?line.bundle.items.map(x=>({pid:x.pid,qty:x.qty*line.qty,note:'禮包：'+line.name})):[{pid:line.pid,qty:line.qty,note:line.gift?'贈品：'+line.giftReason:''}];
-   for(const part of parts){const p=product(part.pid);if(p?.track){p.stock-=part.qty;addMove(ops,p,line.gift?'gift':'sale',-part.qty,part.note,order.id);}}
+   for(const part of parts){const p=product(part.pid);if(p?.track){P.addStock(p,cur(),-part.qty);addMove(ops,p,line.gift?'gift':'sale',-part.qty,part.note,order.id);}}
   }
   if(m){m.points=Math.max(0,m.points-order.pointsUsed+order.pointsEarned);m.total=(m.total||0)+order.total;m.visits=(m.visits||0)+1;m.lastAt=time;}
   ops.push(...kvOps('seq','products','members'));
@@ -418,14 +490,15 @@ ${cashRow>=0?`<div class="pos-chips pos-quick" aria-label="現金快速鍵">${P.
   setTimeout(()=>window.print(),50);
  }
  window.addEventListener('afterprint',()=>document.documentElement.classList.remove('pos-printing'));
- function receiptHead(title){
-  const s=S.settings;
-  return `<h1>${h(s.storeName)}</h1>${s.storeAddress?`<p>${h(s.storeAddress)}</p>`:''}${s.storePhone?`<p>電話 ${h(s.storePhone)}</p>`:''}${s.storeTaxId?`<p>統一編號 ${h(s.storeTaxId)}</p>`:''}<h2>${h(title)}</h2>`;
+ // 明細上方印的是那一家門市的名稱、地址、電話；統一編號是公司的，各門市共用。
+ function receiptHead(title,at=cur()){
+  const s=S.settings,st=storeOf(at)||curStore();
+  return `<h1>${h(st.name)}</h1>${st.address?`<p>${h(st.address)}</p>`:''}${st.phone?`<p>電話 ${h(st.phone)}</p>`:''}${s.storeTaxId?`<p>統一編號 ${h(s.storeTaxId)}</p>`:''}<h2>${h(title)}</h2>`;
  }
  const receiptRow=(label,value,cls='')=>`<p class="r-row ${cls}"><span>${label}</span><span>${value}</span></p>`;
  function receiptHtml(order){
   const refunded=P.refundedTotal(order);
-  return `<article class="pos-receipt">${receiptHead('交易明細')}
+  return `<article class="pos-receipt">${receiptHead('交易明細',sid(order))}
 ${receiptRow('單號',h(order.id))}${receiptRow('時間',P.formatTime(order.t))}${order.cashier?receiptRow('收銀員',h(order.cashier)):''}${order.memberName?receiptRow('會員',h(order.memberName)+(order.memberLevel?'（'+h(order.memberLevel)+'）':'')):''}
 <hr>${order.lines.map(line=>`<p class="r-name">${h(line.name)}${line.note?`（${h(line.note)}）`:''}</p>${line.bundle?`<p class="r-small">${h(line.bundle.items.map(x=>x.name+'×'+x.qty*line.qty).join('、'))}</p>`:''}${line.gift?receiptRow(`${money(line.price)} × ${line.qty}`,'贈品 '+money(0))+`<p class="r-small">${h(line.giftReason||'贈品')}</p>`:receiptRow(`${money(line.price)} × ${line.qty}`,money(line.price*line.qty))+(line.promoOff?receiptRow(h(line.promoLabel||'優惠'),'−'+money(line.promoOff)):'')+(line.discount?receiptRow(h(line.discountLabel||'折扣'),'−'+money(line.discount)):'')}`).join('')}<hr>
 ${receiptRow('小計',money(order.subtotal))}${order.orderDiscount?receiptRow('整單折扣 '+h(order.orderDiscountLabel),'−'+money(order.orderDiscount)):''}${order.levelDiscount?receiptRow(h(order.memberLevel)+' '+h(P.discountLabel({type:'pct',value:order.levelPct})),'−'+money(order.levelDiscount)):''}${order.pointsValue?receiptRow(`點數折抵 ${order.pointsUsed} 點`,'−'+money(order.pointsValue)):''}${order.taxMode==='added'?receiptRow(`營業稅 ${order.taxRate}%`,money(order.tax)):''}
@@ -438,7 +511,7 @@ ${order.buyerTaxId||order.carrier||order.note||order.pointsEarned?'<hr>':''}${or
  function printOrder(order){printHtml(receiptHtml(order));}
  function shiftReportHtml(shift){
   const s=P.shiftSummary(shift,S.orders);
-  return `<article class="pos-receipt">${receiptHead(shift.closedAt?'交班結帳表':'班別小結')}
+  return `<article class="pos-receipt">${receiptHead(shift.closedAt?'交班結帳表':'班別小結',sid(shift))}
 ${receiptRow('收銀員',h(shift.cashier))}${receiptRow('開班',P.formatTime(shift.openedAt))}${shift.closedAt?receiptRow('交班',P.formatTime(shift.closedAt)):receiptRow('列印時間',P.formatTime(Date.now()))}
 <hr>${receiptRow('訂單數',s.orders+' 筆')}${receiptRow('銷售件數',s.items+' 件')}${receiptRow('銷售金額',money(s.sales))}${receiptRow('退款',`−${money(s.refunds)}（${s.refundCount} 筆）`)}${receiptRow('淨額',money(s.net),'r-total')}
 <hr>${s.methods.map(m=>receiptRow(h(m.name),money(m.net))).join('')||'<p>沒有收款紀錄</p>'}
@@ -449,17 +522,17 @@ ${s.countedCash==null?'':receiptRow('實點現金',money(s.countedCash))+receipt
  // ---------- 訂單 ----------
  function ordersInRange(){
   const [from,to]=rangeDates(ui.orders.range),start=P.dayStart(from),end=P.dayStart(P.addDays(to,1)),key=ui.orders.q.normalize('NFKC').trim().toLowerCase();
-  return S.orders.filter(o=>o.t>=start&&o.t<end&&(!key||o.id.includes(key)||o.memberName.toLowerCase().includes(key)||o.buyerTaxId.includes(key)||o.lines.some(l=>l.name.toLowerCase().includes(key)))).reverse();
+  return scoped(S.orders).filter(o=>o.t>=start&&o.t<end&&(!key||o.id.includes(key)||o.memberName.toLowerCase().includes(key)||o.buyerTaxId.includes(key)||o.lines.some(l=>l.name.toLowerCase().includes(key)))).reverse();
  }
  function renderOrders(){
   view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>訂單紀錄</h2><div class="pos-page-tools"><button type="button" data-act="export-orders">匯出訂單 CSV</button><button type="button" data-act="export-lines">匯出明細 CSV</button></div></div>
-<div class="pos-filters">${rangeChips(ui.orders.range,'orders-range')}<input type="search" id="pos-orders-q" data-input="orders-q" autocomplete="off" placeholder="搜尋單號、品名、會員或統編" aria-label="搜尋訂單" value="${h(ui.orders.q)}"></div><div id="pos-list"></div></div>`;
+<div class="pos-filters">${scopeChips()}${rangeChips(ui.orders.range,'orders-range')}<input type="search" id="pos-orders-q" data-input="orders-q" autocomplete="off" placeholder="搜尋單號、品名、會員或統編" aria-label="搜尋訂單" value="${h(ui.orders.q)}"></div><div id="pos-list"></div></div>`;
   renderOrderList();
  }
  function renderOrderList(){
   const list=ordersInRange(),box=$('#pos-list');if(!box)return;
   const sum=list.reduce((total,o)=>total+P.orderNet(o),0);
-  box.innerHTML=list.length?`<p class="pos-summary">${list.length} 筆訂單・退款後合計 <b>${money(sum)}</b></p><div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>單號</th><th>時間</th><th class="num">件數</th><th class="num">金額</th><th>付款</th><th>會員</th><th>狀態</th></tr></thead><tbody>${list.slice(0,300).map(o=>`<tr><td><button type="button" class="pos-link" data-act="order" data-id="${h(o.id)}">${h(o.id)}</button></td><td>${P.formatTime(o.t).slice(5)}</td><td class="num">${o.lines.reduce((n,l)=>n+l.qty,0)}</td><td class="num">${money(o.total)}</td><td>${o.payments.map(p=>h(p.name)).join('、')}</td><td>${h(o.memberName)||'—'}</td><td>${statusTag(o)}</td></tr>`).join('')}</tbody></table></div>${list.length>300?'<p class="pos-more">只顯示最新 300 筆，請縮小日期範圍或匯出 CSV 查看全部</p>':''}`:empty('這段期間沒有訂單');
+  box.innerHTML=list.length?`<p class="pos-summary">${list.length} 筆訂單・退款後合計 <b>${money(sum)}</b></p><div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>單號</th><th>時間</th><th class="num">件數</th><th class="num">金額</th><th>付款</th><th>會員</th>${ui.scope==='all'&&multiStore()?'<th>門市</th>':''}<th>狀態</th></tr></thead><tbody>${list.slice(0,300).map(o=>`<tr><td><button type="button" class="pos-link" data-act="order" data-id="${h(o.id)}">${h(o.id)}</button></td><td>${P.formatTime(o.t).slice(5)}</td><td class="num">${o.lines.reduce((n,l)=>n+l.qty,0)}</td><td class="num">${money(o.total)}</td><td>${o.payments.map(p=>h(p.name)).join('、')}</td><td>${h(o.memberName)||'—'}</td>${ui.scope==='all'&&multiStore()?`<td>${h(storeName(sid(o))||o.storeName)}</td>`:''}<td>${statusTag(o)}</td></tr>`).join('')}</tbody></table></div>${list.length>300?'<p class="pos-more">只顯示最新 300 筆，請縮小日期範圍或匯出 CSV 查看全部</p>':''}`:empty('這段期間沒有訂單');
  }
  function openOrder(id){
   const o=S.orders.find(order=>order.id===id);if(!o)return;
@@ -491,7 +564,7 @@ ${s.countedCash==null?'':receiptRow('實點現金',money(s.countedCash))+receipt
   S.orders[S.orders.indexOf(o)]=result.order;
   if(restock)for(const item of quote.lines){
    const line=o.lines[item.i],parts=line?.bundle?line.bundle.items.map(x=>({pid:x.pid,qty:x.qty*item.qty})):[{pid:item.pid,qty:item.qty}];
-   for(const part of parts){const p=product(part.pid);if(p?.track){p.stock+=part.qty;addMove(ops,p,'refund',part.qty,line?.bundle?'禮包：'+line.name:'',o.id);}}
+   for(const part of parts){const p=product(part.pid);if(p?.track){P.addStock(p,sid(o),part.qty);addMove(ops,p,'refund',part.qty,line?.bundle?'禮包：'+line.name:'',o.id,sid(o));}}
   }
   const m=S.members.find(x=>x.id===o.memberId);
   if(m){m.points=Math.max(0,m.points+result.pointsDelta);m.total=Math.max(0,(m.total||0)+result.spendDelta);}
@@ -510,32 +583,33 @@ ${s.countedCash==null?'':receiptRow('實點現金',money(s.countedCash))+receipt
  function renderProductList(){
   const box=$('#pos-list');if(!box)return;
   const f=ui.products,list=S.products.filter(p=>(f.cat==='all'||(f.cat==='none'?!catName(p.categoryId):p.categoryId===f.cat))&&P.matchProduct(p,f.q));
-  box.innerHTML=list.length?`<p class="pos-summary">${list.length} 項商品</p><div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>品名</th><th>條碼</th><th>分類</th><th class="num">售價</th><th class="num">成本</th><th class="num">庫存</th><th>狀態</th></tr></thead><tbody>${list.map(p=>`<tr><td><button type="button" class="pos-link" data-act="product-edit" data-id="${h(p.id)}">${h(p.name)}</button></td><td class="mono">${h(p.sku)||'—'}</td><td>${h(catName(p.categoryId))||'—'}</td><td class="num">${money(p.price)}</td><td class="num">${money(p.cost||0)}</td><td class="num">${p.track?p.stock:'不計'}</td><td>${p.active===false?'<span class="pos-tag pos-tag-off">下架</span>':'<span class="pos-tag pos-tag-paid">上架</span>'}</td></tr>`).join('')}</tbody></table></div>`:empty(S.products.length?'找不到符合的商品':'還沒有商品，按「新增商品」開始建立');
+  box.innerHTML=list.length?`<p class="pos-summary">${list.length} 項商品</p><div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>品名</th><th>條碼</th><th>分類</th><th>品牌</th><th>廠商</th><th class="num">售價</th><th class="num">成本</th><th class="num">${multiStore()?h(curStore().name)+'庫存':'庫存'}</th><th>狀態</th></tr></thead><tbody>${list.map(p=>`<tr><td><button type="button" class="pos-link" data-act="product-edit" data-id="${h(p.id)}">${h(p.name)}</button></td><td class="mono">${h(p.sku)||'—'}</td><td>${h(catName(p.categoryId))||'—'}</td><td>${h(p.brand)||'—'}</td><td>${h(supplierName(p.supplierId))||'—'}</td><td class="num">${money(p.price)}</td><td class="num">${money(p.cost||0)}</td><td class="num">${p.track?qtyHere(p):'不計'}</td><td>${p.active===false?'<span class="pos-tag pos-tag-off">下架</span>':'<span class="pos-tag pos-tag-paid">上架</span>'}</td></tr>`).join('')}</tbody></table></div>`:empty(S.products.length?'找不到符合的商品':'還沒有商品，按「新增商品」開始建立');
  }
  function openProduct(id){
   const p=id?product(id):null;
   openDialog({title:p?'編輯商品':'新增商品',form:'product',body:`<input type="hidden" name="id" value="${h(p?.id||'')}">
 ${field('品名','<input name="name" maxlength="60" required autocomplete="off" value="'+h(p?.name||'')+'"'+(p?'':' autofocus')+'>')}
 <div class="pos-row">${field('條碼／貨號','<input name="sku" maxlength="32" autocomplete="off" autocapitalize="characters" value="'+h(p?.sku||'')+'">','掃描槍掃到這組號碼就會加入購物車')}${field('分類','<select name="category"><option value="">未分類</option>'+S.categories.map(c=>`<option value="${h(c.id)}"${p?.categoryId===c.id?' selected':''}>${h(c.name)}</option>`).join('')+'</select>')}</div>
+<div class="pos-row">${field('品牌','<input name="brand" maxlength="30" autocomplete="off" list="pos-brand-list" value="'+h(p?.brand||'')+'"><datalist id="pos-brand-list">'+P.brandsOf(S.products).map(b=>`<option value="${h(b)}">`).join('')+'</datalist>','可以留空')}${field('進貨廠商','<select name="supplier"><option value="">未指定</option>'+S.suppliers.map(s=>`<option value="${h(s.id)}"${p?.supplierId===s.id?' selected':''}>${h(s.name)}</option>`).join('')+'</select>','廠商在「庫存」頁的「廠商管理」新增')}</div>
 <div class="pos-row">${field('售價','<input name="price" inputmode="numeric" required autocomplete="off" value="'+h(p?p.price:'')+'">')}${field('成本','<input name="cost" inputmode="numeric" autocomplete="off" value="'+h(p?p.cost||0:'')+'">','用來計算毛利，可不填')}</div>
 <label class="pos-check"><input type="checkbox" name="track" ${!p||p.track?'checked':''}>管理庫存數量</label>
-<div class="pos-row">${p?field('目前庫存','<input value="'+(p.track?p.stock:'不計')+'" disabled>','要增減庫存，請到「庫存」頁進貨或盤點'):field('期初庫存','<input name="stock" inputmode="numeric" autocomplete="off" value="0">')}${field('安全庫存','<input name="lowStock" inputmode="numeric" autocomplete="off" value="'+h(p?p.lowStock:S.settings.lowStock)+'">','低於等於這個數量會提醒')}</div>
+<div class="pos-row">${p?field(multiStore()?h(curStore().name)+'庫存':'目前庫存','<input value="'+(p.track?qtyHere(p):'不計')+'" disabled>',(multiStore()&&p.track?h(stockText(p))+'。':'')+'要增減庫存，請到「庫存」頁進貨、盤點或調撥'):field(multiStore()?h(curStore().name)+'期初庫存':'期初庫存','<input name="stock" inputmode="numeric" autocomplete="off" value="0">',multiStore()?'其他門市從 0 開始':'')}${field('安全庫存','<input name="lowStock" inputmode="numeric" autocomplete="off" value="'+h(p?p.lowStock:S.settings.lowStock)+'">','低於等於這個數量會提醒')}</div>
 <label class="pos-check"><input type="checkbox" name="active" ${!p||p.active!==false?'checked':''}>上架（顯示在收銀畫面）</label>${errorBox}`,
    footer:`${p?`<button type="button" class="pos-danger pos-left" data-act="product-delete" data-id="${h(p.id)}">刪除</button>`:''}<button type="button" data-act="close-dialog">取消</button><button type="submit" class="pos-primary">儲存</button>`});
  }
  function saveProduct(form){
-  const e=form.elements,id=e.id.value,name=e.name.value.trim(),sku=P.normalizeCode(e.sku.value),price=P.parseAmount(e.price.value),cost=e.cost.value.trim()===''?0:P.parseAmount(e.cost.value),low=e.lowStock.value.trim()===''?0:P.parseAmount(e.lowStock.value);
+  const e=form.elements,id=e.id.value,name=e.name.value.trim(),sku=P.normalizeCode(e.sku.value),price=P.parseAmount(e.price.value),cost=e.cost.value.trim()===''?0:P.parseAmount(e.cost.value),low=e.lowStock.value.trim()===''?0:P.parseAmount(e.lowStock.value),brand=e.brand.value.normalize('NFKC').trim().slice(0,30);
   if(!name)return formError(form,'請填品名');
   if(Number.isNaN(price))return formError(form,'售價請填數字');
   if(Number.isNaN(cost)||Number.isNaN(low))return formError(form,'成本和安全庫存請填數字');
   if(sku&&S.products.some(p=>p.id!==id&&P.normalizeCode(p.sku)===sku))return formError(form,'這個條碼已經有其他商品在用');
   const ops=[];
   if(id){
-   Object.assign(product(id),{name,sku,categoryId:e.category.value,price,cost,track:e.track.checked,lowStock:low,active:e.active.checked});
+   Object.assign(product(id),{name,sku,categoryId:e.category.value,brand,supplierId:e.supplier.value,price,cost,track:e.track.checked,lowStock:low,active:e.active.checked});
   }else{
    const stock=e.stock.value.trim()===''?0:P.parseAmount(e.stock.value);
    if(Number.isNaN(stock))return formError(form,'期初庫存請填數字');
-   const p={id:uid(),name,sku,categoryId:e.category.value,price,cost,track:e.track.checked,stock:e.track.checked?stock:0,lowStock:low,active:e.active.checked};
+   const p={id:uid(),name,sku,categoryId:e.category.value,brand,supplierId:e.supplier.value,price,cost,track:e.track.checked,stocks:{[cur()]:e.track.checked?stock:0},lowStock:low,active:e.active.checked};
    S.products.push(p);if(p.track&&stock>0)addMove(ops,p,'in',stock,'期初庫存');
   }
   ops.push(...kvOps('products'));commit(ops);closeDialog();toast('商品已儲存');render();
@@ -563,7 +637,7 @@ ${field('品名','<input name="name" maxlength="60" required autocomplete="off" 
   const match=item=>S.products.find(p=>item.sku?P.normalizeCode(p.sku)===item.sku:p.name===item.name);
   const updates=parsed.items.filter(match).length;
   pendingImport=parsed.items;
-  openDialog({title:'匯入商品',body:`<p class="pos-confirm">讀到 ${parsed.items.length} 項商品：新增 ${parsed.items.length-updates} 項、更新 ${updates} 項（有條碼用條碼比對，沒有條碼用品名）。</p>${parsed.errors.length?`<div class="pos-banner pos-banner-warn"><p>有 ${parsed.errors.length} 列無法匯入：</p><ul>${parsed.errors.slice(0,8).map(e=>`<li>${h(e)}</li>`).join('')}</ul>${parsed.errors.length>8?'<p>……其餘略</p>':''}</div>`:''}<p class="pos-hint">欄位：${P.PRODUCT_COLUMNS.join('、')}。有填「庫存」的商品會直接把庫存改成檔案裡的數量。</p>`,
+  openDialog({title:'匯入商品',body:`<p class="pos-confirm">讀到 ${parsed.items.length} 項商品：新增 ${parsed.items.length-updates} 項、更新 ${updates} 項（有條碼用條碼比對，沒有條碼用品名）。</p>${parsed.errors.length?`<div class="pos-banner pos-banner-warn"><p>有 ${parsed.errors.length} 列無法匯入：</p><ul>${parsed.errors.slice(0,8).map(e=>`<li>${h(e)}</li>`).join('')}</ul>${parsed.errors.length>8?'<p>……其餘略</p>':''}</div>`:''}<p class="pos-hint">欄位：${P.PRODUCT_COLUMNS.join('、')}。有填「庫存」的商品會直接把${multiStore()?h(curStore().name)+'的':''}庫存改成檔案裡的數量；「廠商」沒建立過的會自動新增。</p>`,
    footer:`<button type="button" data-act="close-dialog">取消</button>${parsed.items.length?'<button type="button" class="pos-primary" data-act="import-apply" autofocus>匯入</button>':''}`});
  }
  function applyImport(){
@@ -572,51 +646,105 @@ ${field('品名','<input name="name" maxlength="60" required autocomplete="off" 
    let cat=item.category?S.categories.find(c=>c.name===item.category):null;
    if(item.category&&!cat){cat={id:uid(),name:item.category};S.categories.push(cat);}
    let p=S.products.find(x=>item.sku?P.normalizeCode(x.sku)===item.sku:x.name===item.name);
-   if(!p){p={id:uid(),name:item.name,sku:item.sku,categoryId:'',price:0,cost:0,track:false,stock:0,lowStock:S.settings.lowStock,active:true};S.products.push(p);}
-   const before=p.track?p.stock:0;
+   if(!p){p={id:uid(),name:item.name,sku:item.sku,categoryId:'',brand:'',supplierId:'',price:0,cost:0,track:false,stocks:{},lowStock:S.settings.lowStock,active:true};S.products.push(p);}
+   const before=p.track?qtyHere(p):0;
+   if(item.brand)p.brand=item.brand;
+   if(item.supplier){let s=S.suppliers.find(x=>x.name===item.supplier);if(!s){s={id:uid(),name:item.supplier,phone:'',note:''};S.suppliers.push(s);}p.supplierId=s.id;}
    Object.assign(p,{name:item.name,sku:item.sku||p.sku,categoryId:cat?cat.id:(item.category?'':p.categoryId),price:item.price,cost:item.cost,active:item.active});
    if(item.lowStock!=null)p.lowStock=item.lowStock;
-   if(item.track){p.track=true;p.stock=item.stock;if(item.stock!==before)addMove(ops,p,'adjust',item.stock-before,'CSV 匯入');}
+   if(item.track){p.track=true;P.addStock(p,cur(),item.stock-qtyHere(p));if(item.stock!==before)addMove(ops,p,'adjust',item.stock-before,'CSV 匯入');}
   }
   const count=pendingImport?.length||0;pendingImport=null;
-  ops.push(...kvOps('products','categories'));commit(ops);closeDialog();toast(`已匯入 ${count} 項商品`);render();
+  ops.push(...kvOps('products','categories','suppliers'));commit(ops);closeDialog();toast(`已匯入 ${count} 項商品`);render();
  }
 
  // ---------- 庫存 ----------
- const MOVE_LABEL={sale:'銷售',gift:'贈品',refund:'退貨',in:'進貨',adjust:'盤點調整'};
+ const MOVE_LABEL={sale:'銷售',gift:'贈品',refund:'退貨',in:'進貨',adjust:'盤點調整',transfer:'調撥'};
+ // 庫存頁看哪一家門市：預設是目前收銀的門市；有兩家以上可以選「全部門市」。
+ const stockScope=()=>ui.stock.store==='all'&&multiStore()?'all':(storeOf(ui.stock.store)?ui.stock.store:cur());
+ const stockQty=(p,scope)=>scope==='all'?P.totalStock(p,S.stores.map(s=>s.id)):P.stockAt(p,scope);
+ const stockFilter=(level='',q='')=>({categoryId:ui.stock.cat,brand:ui.stock.brand,supplierId:ui.stock.supplier,q,level,storeId:stockScope(),storeIds:S.stores.map(s=>s.id)});
+ const options=(list,value,all,none)=>`<option value="all">${all}</option>${list.map(([id,label])=>`<option value="${h(id)}"${value===id?' selected':''}>${h(label)}</option>`).join('')}${none?`<option value="none"${value==='none'?' selected':''}>${none}</option>`:''}`;
+ const qtyCell=(p,q)=>q<=0?`<span class="pos-tag pos-tag-refunded">${q}</span>`:P.isLowStock(p,q)?`<span class="pos-tag pos-tag-partial">${q}</span>`:q;
  function renderStock(){
-  const tracked=S.products.filter(p=>p.track),low=tracked.filter(p=>p.stock>0&&P.isLowStock(p)).length,out=tracked.filter(p=>p.stock<=0).length;
-  const value=tracked.reduce((sum,p)=>sum+Math.max(0,p.stock)*(p.cost||0),0);
-  view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>庫存</h2><div class="pos-page-tools"><button type="button" data-act="export-stock">匯出庫存 CSV</button><button type="button" data-act="export-moves">匯出異動 CSV</button></div></div>
-<div class="pos-tiles"><div class="pos-tile"><span>管理中的商品</span><b>${tracked.length}</b></div><div class="pos-tile"><span>低於安全庫存</span><b>${low}</b></div><div class="pos-tile"><span>缺貨</span><b>${out}</b></div><div class="pos-tile"><span>庫存成本</span><b>${money(value)}</b></div></div>
-<div class="pos-filters"><div class="pos-chips" role="group" aria-label="庫存篩選">${[['all','全部'],['low','低庫存'],['out','缺貨']].map(([id,label])=>`<button type="button" class="pos-chip" data-act="stock-filter" data-id="${id}" aria-pressed="${ui.stock.filter===id}">${label}</button>`).join('')}</div><input type="search" data-input="stock-q" autocomplete="off" placeholder="搜尋品名或條碼" aria-label="搜尋庫存" value="${h(ui.stock.q)}"></div><div id="pos-list"></div>
-<h3 class="pos-subhead">最近的庫存異動</h3>${S.moves.length?`<div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>時間</th><th>品名</th><th>類型</th><th class="num">數量</th><th class="num">結存</th><th>備註</th></tr></thead><tbody>${S.moves.slice(-60).reverse().map(m=>`<tr><td>${P.formatTime(m.t).slice(5)}</td><td>${h(m.name)}</td><td>${MOVE_LABEL[m.type]||h(m.type)}</td><td class="num">${m.qty>0?'+':''}${m.qty}</td><td class="num">${m.after}</td><td>${h(m.note||m.ref)}</td></tr>`).join('')}</tbody></table></div>`:empty('還沒有庫存異動')}</div>`;
+  const scope=stockScope(),f=ui.stock,list=P.filterStock(S.products,stockFilter()),qty=p=>stockQty(p,scope);
+  const low=list.filter(p=>qty(p)>0&&P.isLowStock(p,qty(p))).length,out=list.filter(p=>qty(p)<=0).length,value=list.reduce((sum,p)=>sum+Math.max(0,qty(p))*(p.cost||0),0);
+  const moves=S.moves.filter(m=>scope==='all'||sid(m)===scope),filtered=f.cat!=='all'||f.brand!=='all'||f.supplier!=='all';
+  view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>庫存${multiStore()?`<small class="pos-head-note">${scope==='all'?'全部門市':h(storeName(scope))}</small>`:''}</h2><div class="pos-page-tools">${multiStore()?`<button type="button" data-act="stock-transfer">${icon('swap')}<span>門市調撥</span></button>`:''}<button type="button" data-act="suppliers">廠商管理</button><button type="button" data-act="export-stock">匯出庫存 CSV</button><button type="button" data-act="export-moves">匯出異動 CSV</button></div></div>
+<div class="pos-filters pos-stock-filters">${multiStore()?`<label class="pos-select"><span>門市倉庫</span><select data-change="stock-store">${S.stores.map(s=>`<option value="${h(s.id)}"${scope===s.id?' selected':''}>${h(s.name)}</option>`).join('')}<option value="all"${scope==='all'?' selected':''}>全部門市</option></select></label>`:''}<label class="pos-select"><span>類別</span><select data-change="stock-cat">${options(S.categories.map(c=>[c.id,c.name]),f.cat,'全部類別','未分類')}</select></label><label class="pos-select"><span>品牌</span><select data-change="stock-brand">${options(P.brandsOf(S.products).map(b=>[b,b]),f.brand,'全部品牌','未填品牌')}</select></label><label class="pos-select"><span>進貨廠商</span><select data-change="stock-supplier">${options(S.suppliers.map(s=>[s.id,s.name]),f.supplier,'全部廠商','未指定廠商')}</select></label></div>
+<div class="pos-tiles"><div class="pos-tile"><span>${filtered?'符合篩選的商品':'管理中的商品'}</span><b>${list.length}</b></div><div class="pos-tile"><span>低於安全庫存</span><b>${low}</b></div><div class="pos-tile"><span>缺貨</span><b>${out}</b></div><div class="pos-tile"><span>庫存成本</span><b>${money(value)}</b></div></div>
+<div class="pos-filters"><div class="pos-chips" role="group" aria-label="庫存篩選">${[['all','全部'],['low','低庫存'],['out','缺貨']].map(([id,label])=>`<button type="button" class="pos-chip" data-act="stock-filter" data-id="${id}" aria-pressed="${f.filter===id}">${label}</button>`).join('')}</div><input type="search" data-input="stock-q" autocomplete="off" placeholder="搜尋品名或條碼" aria-label="搜尋庫存" value="${h(f.q)}"></div><div id="pos-list"></div>
+<h3 class="pos-subhead">最近的庫存異動</h3>${moves.length?`<div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>時間</th>${multiStore()?'<th>門市</th>':''}<th>品名</th><th>類型</th><th class="num">數量</th><th class="num">結存</th><th>備註</th></tr></thead><tbody>${moves.slice(-60).reverse().map(m=>`<tr><td>${P.formatTime(m.t).slice(5)}</td>${multiStore()?`<td>${h(storeName(sid(m))||m.storeName)}</td>`:''}<td>${h(m.name)}</td><td>${MOVE_LABEL[m.type]||h(m.type)}</td><td class="num">${m.qty>0?'+':''}${m.qty}</td><td class="num">${m.after}</td><td>${h(m.note||m.ref)}</td></tr>`).join('')}</tbody></table></div>`:empty('還沒有庫存異動')}</div>`;
   renderStockList();
  }
  function renderStockList(){
   const box=$('#pos-list');if(!box)return;
-  const f=ui.stock,list=S.products.filter(p=>p.track&&P.matchProduct(p,f.q)&&(f.filter==='all'||(f.filter==='out'?p.stock<=0:p.stock>0&&P.isLowStock(p))));
-  box.innerHTML=list.length?`<div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>品名</th><th>分類</th><th class="num">庫存</th><th class="num">安全庫存</th><th>操作</th></tr></thead><tbody>${list.map(p=>`<tr><td>${h(p.name)}<small class="mono">${h(p.sku)}</small></td><td>${h(catName(p.categoryId))||'—'}</td><td class="num">${p.stock<=0?`<span class="pos-tag pos-tag-refunded">${p.stock}</span>`:P.isLowStock(p)?`<span class="pos-tag pos-tag-partial">${p.stock}</span>`:p.stock}</td><td class="num">${p.lowStock}</td><td class="pos-actions"><button type="button" data-act="stock-in" data-id="${h(p.id)}">進貨</button><button type="button" data-act="stock-count" data-id="${h(p.id)}">盤點</button></td></tr>`).join('')}</tbody></table></div>`:empty(f.filter==='all'&&!f.q?'沒有管理庫存的商品':'沒有符合的商品');
+  const f=ui.stock,scope=stockScope(),all=scope==='all',list=P.filterStock(S.products,stockFilter(f.filter==='all'?'':f.filter,f.q));
+  const head=all?S.stores.map(s=>`<th class="num">${h(s.name)}</th>`).join('')+'<th class="num">合計</th>':'<th class="num">庫存</th>';
+  const cells=p=>all?S.stores.map(s=>`<td class="num">${qtyCell(p,P.stockAt(p,s.id))}</td>`).join('')+`<td class="num"><b>${qtyCell(p,stockQty(p,'all'))}</b></td>`:`<td class="num">${qtyCell(p,P.stockAt(p,scope))}</td>`;
+  box.innerHTML=list.length?`<p class="pos-summary">${list.length} 項商品</p><div class="pos-table-wrap"><table class="pos-table pos-stock-table"><thead><tr><th>品名</th><th>品牌</th><th>類別</th><th>進貨廠商</th>${head}<th class="num">安全庫存</th><th>操作</th></tr></thead><tbody>${list.map(p=>`<tr><td>${h(p.name)}<small class="mono">${h(p.sku)}</small></td><td>${h(p.brand)||'—'}</td><td>${h(catName(p.categoryId))||'—'}</td><td>${h(supplierName(p.supplierId))||'—'}</td>${cells(p)}<td class="num">${p.lowStock}</td><td class="pos-actions"><button type="button" data-act="stock-in" data-id="${h(p.id)}">進貨</button><button type="button" data-act="stock-count" data-id="${h(p.id)}">盤點</button>${multiStore()?`<button type="button" data-act="stock-transfer" data-id="${h(p.id)}">調撥</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:empty(f.filter==='all'&&!f.q&&f.cat==='all'&&f.brand==='all'&&f.supplier==='all'?'沒有管理庫存的商品':'沒有符合的商品');
  }
+ const storeSelect=(name,value,label)=>field(label,`<select name="${name}" data-change="stock-dialog-store">${S.stores.map(s=>`<option value="${h(s.id)}"${value===s.id?' selected':''}>${h(s.name)}</option>`).join('')}</select>`);
  function openStock(id,mode){
   const p=product(id);if(!p)return;
-  openDialog({title:(mode==='in'?'進貨：':'盤點：')+p.name,form:'stock',body:`<input type="hidden" name="id" value="${h(p.id)}"><input type="hidden" name="mode" value="${mode}"><p class="pos-hint">目前庫存 ${p.stock}</p>
-${mode==='in'?`<div class="pos-row">${field('進貨數量','<input name="qty" inputmode="numeric" autocomplete="off" required autofocus>')}${field('進貨單價（選填）','<input name="cost" inputmode="numeric" autocomplete="off" placeholder="'+(p.cost||0)+'">','有填會更新商品成本')}</div>`:field('實際盤點數量','<input name="qty" inputmode="numeric" autocomplete="off" required autofocus value="'+p.stock+'">')}
+  const scope=stockScope(),at=scope==='all'?cur():scope,q=P.stockAt(p,at);
+  openDialog({title:(mode==='in'?'進貨：':'盤點：')+p.name,form:'stock',body:`<input type="hidden" name="id" value="${h(p.id)}"><input type="hidden" name="mode" value="${mode}">${multiStore()?`<p class="pos-hint">目前庫存：${h(stockText(p))}</p>`:''}
+<div class="pos-row">${multiStore()?storeSelect('store',at,mode==='in'?'進到哪一家門市':'盤點哪一家門市'):'<input type="hidden" name="store" value="'+h(at)+'">'}${mode==='in'?field('進貨廠商','<select name="supplier"><option value="">未指定</option>'+S.suppliers.map(s=>`<option value="${h(s.id)}"${p.supplierId===s.id?' selected':''}>${h(s.name)}</option>`).join('')+'</select>'):''}</div>
+<p class="pos-hint pos-stock-now">${multiStore()?h(storeName(at))+' ':''}目前庫存 ${q}</p>
+${mode==='in'?`<div class="pos-row">${field('進貨數量','<input name="qty" inputmode="numeric" autocomplete="off" required autofocus>')}${field('進貨單價（選填）','<input name="cost" inputmode="numeric" autocomplete="off" placeholder="'+(p.cost||0)+'">','有填會更新商品成本')}</div>`:field('實際盤點數量','<input name="qty" inputmode="numeric" autocomplete="off" required autofocus value="'+q+'">')}
 ${field('備註（選填）','<input name="note" maxlength="40" autocomplete="off">')}${errorBox}`,
    footer:'<button type="button" data-act="close-dialog">取消</button><button type="submit" class="pos-primary">儲存</button>'});
  }
  function saveStock(form){
-  const e=form.elements,p=product(e.id.value),qty=P.parseAmount(e.qty.value);if(!p)return false;
+  const e=form.elements,p=product(e.id.value),qty=P.parseAmount(e.qty.value),at=storeOf(e.store.value)?e.store.value:cur();if(!p)return false;
   if(Number.isNaN(qty))return formError(form,'數量請填 0 以上的整數');
   const ops=[];
   if(e.mode.value==='in'){
    if(qty<=0)return formError(form,'進貨數量要大於 0');
    const cost=e.cost.value.trim();if(cost){const c=P.parseAmount(cost);if(Number.isNaN(c))return formError(form,'進貨單價請填數字');p.cost=c;}
-   p.stock+=qty;addMove(ops,p,'in',qty,e.note.value.trim());
+   const vendor=supplierName(e.supplier.value);if(vendor&&!p.supplierId)p.supplierId=e.supplier.value;
+   P.addStock(p,at,qty);addMove(ops,p,'in',qty,[vendor&&'廠商 '+vendor,e.note.value.trim()].filter(Boolean).join('・'),'',at);
   }else{
-   const delta=qty-p.stock;p.stock=qty;addMove(ops,p,'adjust',delta,e.note.value.trim());
+   const delta=qty-P.stockAt(p,at);P.addStock(p,at,delta);addMove(ops,p,'adjust',delta,e.note.value.trim(),'',at);
   }
-  ops.push(...kvOps('products'));commit(ops);closeDialog();toast('庫存已更新');render();
+  ops.push(...kvOps('products'));commit(ops);closeDialog();toast(multiStore()?storeName(at)+'庫存已更新':'庫存已更新');render();
+  return true;
+ }
+ // 門市調撥：從一家門市搬貨到另一家，兩邊各記一筆異動。
+ function openTransfer(id){
+  const tracked=S.products.filter(p=>p.track).sort((a,b)=>a.name.localeCompare(b.name,'zh-Hant'));if(!tracked.length)return toast('沒有管理庫存的商品','warn');
+  const p=product(id)||tracked[0],scope=stockScope(),from=scope==='all'?cur():scope,to=S.stores.find(s=>s.id!==from)?.id||from;
+  openDialog({title:'門市調撥',form:'transfer',body:`${field('商品','<select name="id" data-change="transfer-product">'+tracked.map(x=>`<option value="${h(x.id)}"${x.id===p.id?' selected':''}>${h(x.name)}</option>`).join('')+'</select>')}
+<p class="pos-hint pos-stock-now">目前庫存：${h(stockText(p))}</p>
+<div class="pos-row">${storeSelect('from',from,'從（調出）')}${storeSelect('to',to,'到（調入）')}</div>
+<div class="pos-row">${field('調撥數量','<input name="qty" inputmode="numeric" autocomplete="off" required autofocus>')}${field('備註（選填）','<input name="note" maxlength="40" autocomplete="off">')}</div>${errorBox}`,
+   footer:'<button type="button" data-act="close-dialog">取消</button><button type="submit" class="pos-primary">確認調撥</button>'});
+ }
+ function saveTransfer(form){
+  const e=form.elements,p=product(e.id.value),qty=P.parseAmount(e.qty.value),from=e.from.value,to=e.to.value,note=e.note.value.trim();if(!p)return false;
+  if(Number.isNaN(qty))return formError(form,'調撥數量請填整數');
+  if(!storeOf(from)||!storeOf(to))return formError(form,'請選擇門市');
+  try{P.transferStock(p,from,to,qty);}catch(error){return formError(form,error.message);}
+  const ops=[];
+  addMove(ops,p,'transfer',-qty,['調撥到 '+storeName(to),note].filter(Boolean).join('・'),'',from);
+  addMove(ops,p,'transfer',qty,['從 '+storeName(from)+' 調入',note].filter(Boolean).join('・'),'',to);
+  ops.push(...kvOps('products'));commit(ops);closeDialog();toast(`已從${storeName(from)}調 ${qty} 個「${p.name}」到${storeName(to)}`);render();
+  return true;
+ }
+ function openSuppliers(){
+  openDialog({title:'廠商管理',form:'suppliers',body:`<div class="pos-cat-list">${S.suppliers.map((s,i)=>`<div class="pos-cat-row pos-supplier-row"><input name="sup-name-${i}" maxlength="30" autocomplete="off" value="${h(s.name)}" aria-label="廠商名稱"><input name="sup-phone-${i}" maxlength="20" autocomplete="off" value="${h(s.phone)}" placeholder="電話（選填）" aria-label="廠商電話"><label class="pos-check"><input type="checkbox" name="sup-del-${i}">刪除</label></div>`).join('')||'<p class="pos-hint">還沒有廠商</p>'}</div><div class="pos-row">${field('新增廠商','<input name="new" maxlength="30" autocomplete="off" placeholder="例如 晨光飲品">')}${field('電話（選填）','<input name="newPhone" maxlength="20" autocomplete="off">')}</div><p class="pos-hint">商品的進貨廠商在「商品」頁編輯商品時選擇。刪除廠商後，原本的商品會變成未指定廠商。</p>${errorBox}`,
+   footer:'<button type="button" data-act="close-dialog">取消</button><button type="submit" class="pos-primary">儲存</button>'});
+ }
+ function saveSuppliers(form){
+  const e=form.elements,next=[];
+  S.suppliers.forEach((s,i)=>{
+   if(e['sup-del-'+i].checked){for(const p of S.products)if(p.supplierId===s.id)p.supplierId='';if(ui.stock.supplier===s.id)ui.stock.supplier='all';return;}
+   next.push({...s,name:e['sup-name-'+i].value.trim(),phone:e['sup-phone-'+i].value.trim()});
+  });
+  if(next.some(s=>!s.name))return formError(form,'廠商名稱不能空白');
+  const added=e.new.value.trim();if(added)next.push({id:uid(),name:added,phone:e.newPhone.value.trim(),note:''});
+  if(new Set(next.map(s=>s.name)).size!==next.length)return formError(form,'廠商名稱不能重複');
+  S.suppliers=next;save('suppliers','products');closeDialog();toast('廠商已更新');render();
   return true;
  }
 
@@ -747,7 +875,7 @@ ${typeFields}
 
  // ---------- 交班 ----------
  function renderShift(){
-  const shift=currentShift(),past=S.shifts.filter(s=>s.closedAt).slice(-20).reverse();
+  const shift=currentShift(),past=S.shifts.filter(s=>s.closedAt&&here(s)).slice(-20).reverse();
   let body;
   if(shift){
    const s=P.shiftSummary(shift,S.orders);
@@ -760,17 +888,17 @@ ${(shift.cashMoves||[]).length?`<ul class="pos-moves">${shift.cashMoves.slice().
   }else{
    body=`<section class="pos-card pos-card-narrow"><h3>開班</h3><p class="pos-hint">開班後，這一班的銷售、退款與現金收支會分開統計，交班時可以對帳。沒有開班也能結帳，只是不會算進任何一班。</p><form data-form="shift-open" novalidate><div class="pos-row">${field('收銀員','<select name="cashier">'+S.settings.cashiers.map(c=>`<option${c===S.settings.cashier?' selected':''}>${h(c)}</option>`).join('')+'</select>')}${field('開班零用金','<input name="opening" inputmode="numeric" autocomplete="off" value="0">','抽屜裡準備找零的現金')}</div>${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primary">開班</button></div></form></section>`;
   }
-  view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>交班</h2></div>${body}
+  view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>交班${multiStore()?`<small class="pos-head-note">${h(curStore().name)}</small>`:''}</h2></div>${body}
 <h3 class="pos-subhead">過去的班別</h3>${past.length?`<div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>開班</th><th>交班</th><th>收銀員</th><th class="num">淨額</th><th class="num">應有現金</th><th class="num">實點</th><th class="num">差額</th><th>操作</th></tr></thead><tbody>${past.map(sh=>{const s=sh.summary||P.shiftSummary(sh,S.orders);return `<tr><td>${P.formatTime(sh.openedAt).slice(5)}</td><td>${P.formatTime(sh.closedAt).slice(5)}</td><td>${h(sh.cashier)}</td><td class="num">${money(s.net)}</td><td class="num">${money(s.expectedCash)}</td><td class="num">${money(s.countedCash)}</td><td class="num">${s.difference?`<span class="pos-tag pos-tag-partial">${s.difference>0?'+':''}${money(s.difference)}</span>`:money(0)}</td><td class="pos-actions"><button type="button" data-act="print-shift" data-id="${h(sh.id)}">列印</button></td></tr>`;}).join('')}</tbody></table></div>`:empty('還沒有交班紀錄')}</div>`;
  }
 
  // ---------- 日結 ----------
- const closeOf=day=>S.closes.find(c=>c.day===day)||null;
+ const closeOf=day=>S.closes.find(c=>c.day===day&&here(c))||null;
  const signed=amount=>(amount>0?'+':amount<0?'−':'')+money(Math.abs(amount));
  function renderClose(){
-  const day=ui.close.day,d=P.daySummary(S.orders,S.shifts,day),done=closeOf(day),open=currentShift(),changed=done&&P.dayChanged(done.summary,d);
-  const past=S.closes.slice().sort((a,b)=>b.day.localeCompare(a.day)).slice(0,31);
-  view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>日結</h2><div class="pos-page-tools"><button type="button" class="pos-primary" data-act="close-report" data-day="${day}">查看這一天的報表</button><button type="button" data-act="export-close-day" data-day="${day}">下載這一天的報表</button><button type="button" data-act="print-close" data-day="${day}">列印</button><button type="button" data-act="export-closes" ${S.closes.length?'':'disabled'}>匯出全部日結紀錄</button></div></div>
+  const day=ui.close.day,d=dayOf(day),done=closeOf(day),open=currentShift(),changed=done&&P.dayChanged(done.summary,d);
+  const past=S.closes.filter(here).sort((a,b)=>b.day.localeCompare(a.day)).slice(0,31);
+  view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>日結${multiStore()?`<small class="pos-head-note">${h(curStore().name)}</small>`:''}</h2><div class="pos-page-tools"><button type="button" class="pos-primary" data-act="close-report" data-day="${day}">查看這一天的報表</button><button type="button" data-act="export-close-day" data-day="${day}">下載這一天的報表</button><button type="button" data-act="print-close" data-day="${day}">列印</button><button type="button" data-act="export-closes" ${S.closes.length?'':'disabled'}>匯出全部日結紀錄</button></div></div>
 <div class="pos-filters"><div class="pos-dates"><button type="button" data-act="close-shift" data-d="-1" aria-label="前一天">‹ 前一天</button><input type="date" aria-label="要查看的日期" data-change="close-day" value="${day}" max="${today()}"><button type="button" data-act="close-shift" data-d="1" ${day>=today()?'disabled':''} aria-label="後一天">後一天 ›</button></div>${done?`<span class="pos-tag pos-tag-paid">已日結 ${P.formatTime(done.closedAt).slice(5)}</span>`:'<span class="pos-tag pos-tag-partial">尚未日結</span>'}</div>
 ${open?`<p class="pos-banner pos-banner-warn">${h(open.cashier)} 的班還沒交班。建議先到「交班」結完這一班，再做日結，現金才對得起來。</p>`:''}
 ${changed?'<p class="pos-banner pos-banner-warn">這一天日結之後又有結帳或退款，下面是最新的數字。確認後可以再按一次「重新日結」更新紀錄。</p>':''}
@@ -785,13 +913,13 @@ ${d.firstOrder?`<p class="pos-hint">單號 ${h(d.firstOrder)} 到 ${h(d.lastOrde
  }
  // 日結報表：按下「完成日結」就跳出來，最上面是各付款方式今天收了多少。
  function closeRecord(day){
-  const done=closeOf(day),live=P.daySummary(S.orders,S.shifts,day),fresh=!done||P.dayChanged(done.summary,live);
+  const done=closeOf(day),live=dayOf(day),fresh=!done||P.dayChanged(done.summary,live);
   return {day,closedAt:done?.closedAt||0,cashier:done?.cashier||'',countedCash:done?done.countedCash:null,note:done?.note||'',summary:done&&!fresh?done.summary:live,done:!!done,stale:!!done&&fresh};
  }
  function openDayReport(day){
   const r=closeRecord(day),d=r.summary,rows=P.methodBreakdown(d,S.settings.methods),max=Math.max(1,...rows.map(m=>Math.abs(m.net)));
   const diff=r.countedCash==null?null:r.countedCash-d.expectedCash;
-  openDialog({title:'日結報表 '+day,size:'wide',body:`<div class="pos-meta"><span>${h(S.settings.storeName)}</span>${r.done?`<span>日結時間 ${P.formatTime(r.closedAt)}</span><span>經手人 ${h(r.cashier)}</span>`:'<span class="pos-tag pos-tag-partial">尚未日結</span>'}${d.firstOrder?`<span>單號 ${h(d.firstOrder.slice(9))}–${h(d.lastOrder.slice(9))}</span>`:''}</div>
+  openDialog({title:'日結報表 '+day,size:'wide',body:`<div class="pos-meta"><span>${h(curStore().name)}</span>${r.done?`<span>日結時間 ${P.formatTime(r.closedAt)}</span><span>經手人 ${h(r.cashier)}</span>`:'<span class="pos-tag pos-tag-partial">尚未日結</span>'}${d.firstOrder?`<span>單號 ${h(d.firstOrder.slice(9))}–${h(d.lastOrder.slice(9))}</span>`:''}</div>
 ${r.stale?'<p class="pos-banner pos-banner-warn">這一天日結之後又有結帳或退款，這裡顯示的是最新數字。</p>':''}
 <div class="pos-tiles"><div class="pos-tile pos-tile-strong"><span>今日淨銷售額</span><b>${money(d.net)}</b></div><div class="pos-tile"><span>訂單數</span><b>${d.orders}</b></div><div class="pos-tile"><span>退款</span><b>${money(d.refunds)}</b></div><div class="pos-tile"><span>營業稅</span><b>${money(d.netTax)}</b></div>${d.giftQty?`<div class="pos-tile"><span>贈品</span><b>${d.giftQty} 件</b><small>成本 ${money(d.giftCost)}</small></div>`:''}</div>
 <section class="pos-card"><h3>各付款方式今日金額</h3><div class="pos-bars pos-methods">${rows.map(m=>`<div class="pos-bar-row"><span>${h(m.name)}<small>${m.count} 筆${m.refunds?`・已扣退款 ${money(m.refunds)}`:''}</small></span><div class="pos-bar-track"><i style="width:${Math.max(0,m.net)/max*100}%"></i></div><b>${money(m.net)}</b></div>`).join('')}<div class="pos-bar-row pos-bar-total"><span>合計</span><span></span><b>${money(d.net)}</b></div></div></section>
@@ -826,11 +954,11 @@ ${d.shifts.length?'<hr>'+d.shifts.map(s=>receiptRow(h(s.cashier)+' '+P.formatTim
   return `<svg class="pos-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="銷售金額長條圖，詳細數字見下方表格">${grid}${bars}</svg><div class="pos-tip" id="pos-tip" hidden></div>`;
  }
  function renderReports(){
-  const [from,to]=rangeDates(ui.reports.range,ui.reports),r=P.report(S.orders,from,to),single=from===to;
+  const [from,to]=rangeDates(ui.reports.range,ui.reports),r=P.report(scoped(S.orders),from,to),single=from===to;
   const chartRows=single?r.hours:r.days,hasSales=r.orders>0||r.refunds>0;
   const maxMethod=Math.max(1,...r.methods.map(m=>Math.abs(m.net)));
   view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>報表</h2><div class="pos-page-tools"><button type="button" data-act="export-report">匯出商品銷售 CSV</button></div></div>
-<div class="pos-filters">${rangeChips(ui.reports.range,'reports-range')}<div class="pos-dates"><input type="date" aria-label="開始日期" data-change="reports-from" value="${from}" max="${today()}"><span>到</span><input type="date" aria-label="結束日期" data-change="reports-to" value="${to}" max="${today()}"></div></div>
+<div class="pos-filters">${scopeChips()}${rangeChips(ui.reports.range,'reports-range')}<div class="pos-dates"><input type="date" aria-label="開始日期" data-change="reports-from" value="${from}" max="${today()}"><span>到</span><input type="date" aria-label="結束日期" data-change="reports-to" value="${to}" max="${today()}"></div></div>
 <div class="pos-tiles"><div class="pos-tile pos-tile-strong"><span>淨銷售額</span><b>${money(r.net)}</b></div><div class="pos-tile"><span>訂單數</span><b>${r.orders}</b></div><div class="pos-tile"><span>客單價</span><b>${money(r.average)}</b></div><div class="pos-tile"><span>毛利</span><b>${money(r.profit)}</b></div><div class="pos-tile"><span>退款</span><b>${money(r.refunds)}</b></div><div class="pos-tile"><span>營業稅</span><b>${money(r.netTax)}</b></div>${r.giftQty?`<div class="pos-tile"><span>贈品</span><b>${r.giftQty} 件</b><small>成本 ${money(r.giftCost)}</small></div>`:''}</div>
 ${hasSales?`<section class="pos-card"><h3>${single?'各時段銷售金額':'每日銷售金額'}</h3>${barChart(chartRows,single?row=>row.hour+'時':row=>row.day.slice(5).replace('-','/'),single?row=>`${row.hour}:00–${row.hour}:59　${money(row.sales)}　${row.orders} 筆`:row=>`${row.day}　${money(row.sales)}　${row.orders} 筆`)}
 ${single?'':`<details class="pos-more-fields"><summary>用表格看每日數字</summary><div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>日期</th><th class="num">訂單</th><th class="num">銷售</th><th class="num">退款</th></tr></thead><tbody>${r.days.map(d=>`<tr><td>${d.day}</td><td class="num">${d.orders}</td><td class="num">${money(d.sales)}</td><td class="num">${money(d.refunds)}</td></tr>`).join('')}</tbody></table></div></details>`}</section>
@@ -845,7 +973,7 @@ ${single?'':`<details class="pos-more-fields"><summary>用表格看每日數字<
   const s=S.settings;
   view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>設定</h2></div>
 <form class="pos-settings" data-form="settings" novalidate>
-<section class="pos-card"><h3>門市資料</h3><p class="pos-hint">會印在交易明細上方。</p><div class="pos-row">${field('門市名稱','<input name="storeName" maxlength="30" autocomplete="off" value="'+h(s.storeName)+'">')}${field('電話','<input name="storePhone" maxlength="20" autocomplete="off" value="'+h(s.storePhone)+'">')}</div><div class="pos-row">${field('地址','<input name="storeAddress" maxlength="60" autocomplete="off" value="'+h(s.storeAddress)+'">')}${field('統一編號','<input name="storeTaxId" inputmode="numeric" maxlength="8" autocomplete="off" value="'+h(s.storeTaxId)+'">')}</div>${field('明細結尾文字','<input name="receiptFooter" maxlength="40" autocomplete="off" value="'+h(s.receiptFooter)+'">')}</section>
+<section class="pos-card"><h3>門市</h3><p class="pos-hint">每家門市的庫存、交班和日結分開記錄；名稱、地址、電話會印在那家門市的交易明細上方。有兩家以上門市時，打開收銀系統會先選門市。</p><div class="pos-store-rows">${S.stores.map((st,i)=>`<div class="pos-store-row"><div class="pos-row">${field('門市名稱'+(st.id===cur()?'<em class="pos-tag pos-tag-paid">目前</em>':''),'<input name="store-name-'+i+'" maxlength="30" autocomplete="off" value="'+h(st.name)+'">')}${field('電話','<input name="store-phone-'+i+'" maxlength="20" autocomplete="off" value="'+h(st.phone)+'">')}</div><div class="pos-row">${field('地址','<input name="store-address-'+i+'" maxlength="60" autocomplete="off" value="'+h(st.address)+'">')}${S.stores.length>1&&st.id!==cur()?'<label class="pos-check"><input type="checkbox" name="store-del-'+i+'">刪除這家門市</label>':''}</div></div>`).join('')}</div>${field('新增門市','<input name="store-new" maxlength="30" autocomplete="off" placeholder="例如 台中門市">','新門市的庫存從 0 開始，可以到「庫存」進貨，或從其他門市調撥。刪除門市會一併刪掉那家門市的庫存數量；訂單、交班與日結紀錄會保留。')}<div class="pos-row">${field('統一編號','<input name="storeTaxId" inputmode="numeric" maxlength="8" autocomplete="off" value="'+h(s.storeTaxId)+'">','各門市共用')}${field('明細結尾文字','<input name="receiptFooter" maxlength="40" autocomplete="off" value="'+h(s.receiptFooter)+'">')}</div></section>
 <section class="pos-card"><h3>金額與稅</h3><div class="pos-row">${field('幣別符號','<input name="currency" maxlength="4" autocomplete="off" value="'+h(s.currency)+'">')}${field('營業稅','<select name="taxMode"><option value="included"'+(s.taxMode==='included'?' selected':'')+'>售價已含稅</option><option value="added"'+(s.taxMode==='added'?' selected':'')+'>結帳時外加</option><option value="none"'+(s.taxMode==='none'?' selected':'')+'>不計稅</option></select>')}${field('稅率 %','<input name="taxRate" inputmode="decimal" autocomplete="off" value="'+h(s.taxRate)+'">')}</div></section>
 <section class="pos-card"><h3>會員集點</h3><div class="pos-row">${field('每消費多少元得 1 點','<input name="earnPer" inputmode="numeric" autocomplete="off" value="'+h(s.earnPer)+'">','填 0 表示不集點')}${field('1 點可折多少元','<input name="pointValue" inputmode="numeric" autocomplete="off" value="'+h(s.pointValue)+'">')}</div></section>
 <section class="pos-card"><h3>會員等級</h3><p class="pos-hint">依會員的累計消費自動升級。折扣是結帳時整張單再打的折扣，填 0 表示只顯示等級、不打折。名稱留空的列不使用。</p><div class="pos-level-rows">${[0,1,2,3,4].map(i=>{const l=P.cleanLevels(s.levels)[i]||{name:'',min:'',pct:''};return `<div class="pos-row pos-level-row">${field('等級名稱','<input name="level-name-'+i+'" maxlength="12" autocomplete="off" value="'+h(l.name)+'" placeholder="例如 銀卡會員">')}${field('累計消費滿','<input name="level-min-'+i+'" inputmode="numeric" autocomplete="off" value="'+h(l.min)+'">')}${field('整單折扣 %','<input name="level-pct-'+i+'" inputmode="decimal" autocomplete="off" value="'+h(l.pct)+'">','5 是 95 折')}</div>`;}).join('')}</div></section>
@@ -876,10 +1004,18 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
     levels.push({name,min,pct});
    }
    if(new Set(levels.map(l=>l.name)).size!==levels.length)throw Error('會員等級名稱不能重複');
-   Object.assign(s,{storeName:e.storeName.value.trim()||'我的門市',storePhone:e.storePhone.value.trim(),storeAddress:e.storeAddress.value.trim(),storeTaxId:taxId,receiptFooter:e.receiptFooter.value.trim(),currency:e.currency.value.trim(),taxMode:e.taxMode.value,taxRate,earnPer,pointValue,lowStock,receiptWidth:Number(e.receiptWidth.value),autoPrint:e.autoPrint.checked,sound:e.sound.checked,blockOversell:e.blockOversell.checked,cashiers,methods,levels:P.cleanLevels(levels)});
+   const stores=[],dropped=[];
+   S.stores.forEach((st,i)=>{if(e['store-del-'+i]?.checked&&st.id!==cur()){dropped.push(st.id);return;}stores.push({...st,name:e['store-name-'+i].value.trim().slice(0,30),phone:e['store-phone-'+i].value.trim(),address:e['store-address-'+i].value.trim()});});
+   if(stores.some(st=>!st.name))throw Error('門市名稱不能空白');
+   const added=e['store-new'].value.trim().slice(0,30);if(added)stores.push({id:uid(),name:added,address:'',phone:''});
+   if(new Set(stores.map(st=>st.name)).size!==stores.length)throw Error('門市名稱不能重複');
+   S.stores=stores;
+   for(const p of S.products)if(p.stocks&&dropped.some(id=>id in p.stocks)){p.stocks={...p.stocks};for(const id of dropped)delete p.stocks[id];}
+   if(dropped.includes(ui.stock.store))ui.stock.store='';
+   Object.assign(s,{storeName:S.stores[0].name,storePhone:S.stores[0].phone,storeAddress:S.stores[0].address,storeTaxId:taxId,receiptFooter:e.receiptFooter.value.trim(),currency:e.currency.value.trim(),taxMode:e.taxMode.value,taxRate,earnPer,pointValue,lowStock,receiptWidth:Number(e.receiptWidth.value),autoPrint:e.autoPrint.checked,sound:e.sound.checked,blockOversell:e.blockOversell.checked,cashiers,methods,levels:P.cleanLevels(levels)});
    if(!cashiers.includes(s.cashier))s.cashier=cashiers[0];
   }catch(error){return formError(form,error.message);}
-  save('settings');toast('設定已儲存');render();updateBar();
+  save('settings','stores','products');toast('設定已儲存');render();updateBar();
   return true;
  }
  function backup(){
@@ -891,13 +1027,15 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   if(data?.app!=='samegg-pos'||!data.kv||!Array.isArray(data.orders)||!Array.isArray(data.kv.products))return toast('這不是門市 POS 的備份檔','error');
   for(const key of KV)S[key]=data.kv[key]??(key==='seq'?null:Array.isArray(S[key])?[]:S[key]);
   S.settings={...P.DEFAULT_SETTINGS,...S.settings};
+  normalize();
   S.orders=data.orders.filter(o=>o&&o.id&&Array.isArray(o.lines)).sort((a,b)=>a.t-b.t);S.moves=(Array.isArray(data.moves)?data.moves:[]).filter(m=>m&&m.id);
   await commit([['orders','clear'],['moves','clear'],...S.orders.map(o=>['orders','put',o]),...S.moves.map(m=>['moves','put',m]),...kvOps(...KV)]);
   resetCart();closeDialog();toast('已從備份檔還原');show('sale');
  }
  async function wipe(demoOnly){
-  if(demoOnly){S.products=[];S.categories=[];S.members=[];S.settings.demo=false;}
-  else{S.products=[];S.categories=[];S.members=[];S.settings={...P.DEFAULT_SETTINGS,methods:P.DEFAULT_METHODS.map(m=>({...m})),cashiers:['店長']};}
+  if(demoOnly){S.products=[];S.categories=[];S.members=[];S.suppliers=[];S.settings.demo=false;}
+  else{S.products=[];S.categories=[];S.members=[];S.suppliers=[];S.stores=[];S.settings={...P.DEFAULT_SETTINGS,methods:P.DEFAULT_METHODS.map(m=>({...m})),cashiers:['店長']};}
+  normalize();
   S.held=[];S.shifts=[];S.closes=[];S.promos=[];S.seq=null;S.orders=[];S.moves=[];
   await commit([['orders','clear'],['moves','clear'],...kvOps(...KV)]);
   resetCart();closeDialog();toast(demoOnly?'示範資料已清除，可以開始建立自己的商品':'全部資料已清除');show(demoOnly?'products':'sale');
@@ -939,9 +1077,9 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   hold:()=>{
    if(!cart.lines.length)return;
    const t=totals();
-   S.held.push({id:uid(),t:Date.now(),cart,qty:t.qty,total:t.total,label:member()?.name||''});save('held');resetCart();renderCart();toast('已掛單，按「取單」可以叫回來');
+   S.held.push({id:uid(),t:Date.now(),storeId:cur(),cart,qty:t.qty,total:t.total,label:member()?.name||''});save('held');resetCart();renderCart();toast('已掛單，按「取單」可以叫回來');
   },
-  held:()=>openDialog({title:'取單',body:S.held.length?`<div class="pos-pick-list">${S.held.map(item=>`<div class="pos-held"><button type="button" class="pos-pick" data-act="held-take" data-id="${h(item.id)}"><b>${P.formatTime(item.t).slice(11)} 掛單${item.label?'・'+h(item.label):''}</b><span>${item.qty} 件・${money(item.total)}・${h(item.cart.lines.slice(0,3).map(l=>l.name).join('、'))}${item.cart.lines.length>3?'……':''}</span></button><button type="button" class="pos-icon" data-act="held-drop" data-id="${h(item.id)}" aria-label="刪除這筆掛單">✕</button></div>`).join('')}</div>`:empty('目前沒有掛單'),footer:'<button type="button" class="pos-primary" data-act="close-dialog">關閉</button>'}),
+  held:()=>openDialog({title:'取單',body:heldHere().length?`<div class="pos-pick-list">${heldHere().map(item=>`<div class="pos-held"><button type="button" class="pos-pick" data-act="held-take" data-id="${h(item.id)}"><b>${P.formatTime(item.t).slice(11)} 掛單${item.label?'・'+h(item.label):''}</b><span>${item.qty} 件・${money(item.total)}・${h(item.cart.lines.slice(0,3).map(l=>l.name).join('、'))}${item.cart.lines.length>3?'……':''}</span></button><button type="button" class="pos-icon" data-act="held-drop" data-id="${h(item.id)}" aria-label="刪除這筆掛單">✕</button></div>`).join('')}</div>`:empty('目前沒有掛單'),footer:'<button type="button" class="pos-primary" data-act="close-dialog">關閉</button>'}),
   'held-take':el=>{
    if(cart.lines.length)return toast('購物車還有商品，請先結帳或掛單','warn');
    const index=S.held.findIndex(item=>item.id===el.dataset.id);if(index<0)return;
@@ -982,12 +1120,21 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   categories:()=>openCategories(),
   'import-products':()=>$('#pos-import-file').click(),
   'import-apply':()=>applyImport(),
-  'export-products':()=>downloadCsv('pos-products-'+today()+'.csv',P.productsToRows(S.products,S.categories)),
+  'export-products':()=>downloadCsv('pos-products-'+today()+'.csv',P.productsToRows(S.products,S.categories,S.suppliers,cur())),
   'stock-filter':el=>{ui.stock.filter=el.dataset.id;for(const chip of $$('[data-act=stock-filter]'))chip.setAttribute('aria-pressed',chip===el);renderStockList();},
   'stock-in':el=>openStock(el.dataset.id,'in'),
   'stock-count':el=>openStock(el.dataset.id,'count'),
-  'export-stock':()=>downloadCsv('pos-stock-'+today()+'.csv',[['品名','條碼','分類','庫存','安全庫存','成本','庫存成本'],...S.products.filter(p=>p.track).map(p=>[p.name,p.sku,catName(p.categoryId),p.stock,p.lowStock,p.cost||0,Math.max(0,p.stock)*(p.cost||0)])]),
-  'export-moves':()=>downloadCsv('pos-stock-moves-'+today()+'.csv',[['時間','品名','類型','數量','結存','備註','單號'],...S.moves.map(m=>[P.formatTime(m.t),m.name,MOVE_LABEL[m.type]||m.type,m.qty,m.after,m.note,m.ref])]),
+  'stock-transfer':el=>openTransfer(el.dataset.id||''),
+  suppliers:()=>openSuppliers(),
+  scope:el=>{ui.scope=el.dataset.id;render();},
+  'switch-store':()=>openLogin(true),
+  'login-store':el=>pickLogin('store',el),
+  'login-cashier':el=>pickLogin('cashier',el),
+  'export-stock':()=>{
+   const scope=stockScope(),all=scope==='all',list=P.filterStock(S.products,stockFilter(ui.stock.filter==='all'?'':ui.stock.filter,ui.stock.q));
+   downloadCsv(`pos-stock-${fileTag(scope)}${today()}.csv`,[['品名','條碼','品牌','類別','進貨廠商',...(all?[...S.stores.map(s=>s.name),'合計']:[multiStore()?storeName(scope)+'庫存':'庫存']),'安全庫存','成本','庫存成本'],...list.map(p=>{const q=stockQty(p,scope);return [p.name,p.sku,p.brand||'',catName(p.categoryId),supplierName(p.supplierId),...(all?S.stores.map(s=>P.stockAt(p,s.id)):[]),q,p.lowStock,p.cost||0,Math.max(0,q)*(p.cost||0)];})]);
+  },
+  'export-moves':()=>downloadCsv('pos-stock-moves-'+today()+'.csv',[['時間','門市','品名','類型','數量','結存','備註','單號'],...S.moves.map(m=>[P.formatTime(m.t),storeName(sid(m))||m.storeName||'',m.name,MOVE_LABEL[m.type]||m.type,m.qty,m.after,m.note,m.ref])]),
   'promo-new':el=>openPromo('',el.dataset.type),
   'promo-edit':el=>openPromo(el.dataset.id),
   'promo-toggle':el=>{const p=S.promos.find(x=>x.id===el.dataset.id);if(!p)return;p.active=p.active===false;save('promos');toast(p.active?'活動已啟用':'活動已停用');render();},
@@ -1004,11 +1151,11 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   'close-open':el=>{ui.close.day=el.dataset.day;renderClose();view.scrollTop=0;},
   'print-close':el=>printHtml(dayCloseHtml(el.dataset.day)),
   'close-report':el=>openDayReport(el.dataset.day),
-  'export-close-day':el=>downloadCsv('pos-day-report-'+el.dataset.day+'.csv',P.dayReportRows(closeRecord(el.dataset.day),S.settings.methods)),
-  'export-closes':()=>downloadCsv('pos-day-closes-'+today()+'.csv',P.closesToRows(S.closes.slice().sort((x,y)=>x.day.localeCompare(y.day)))),
+  'export-close-day':el=>{const rows=P.dayReportRows(closeRecord(el.dataset.day),S.settings.methods);rows.splice(1,0,['門市',curStore().name]);downloadCsv('pos-day-report-'+fileTag(cur())+el.dataset.day+'.csv',rows);},
+  'export-closes':()=>downloadCsv('pos-day-closes-'+fileTag(cur())+today()+'.csv',P.closesToRows(S.closes.filter(here).sort((x,y)=>x.day.localeCompare(y.day)))),
   'print-shift':el=>{const shift=S.shifts.find(s=>s.id===el.dataset.id);if(shift)printHtml(shiftReportHtml(shift));},
   'reports-range':el=>{ui.reports.range=el.dataset.range;renderReports();},
-  'export-report':()=>{const [from,to]=rangeDates(ui.reports.range,ui.reports),r=P.report(S.orders,from,to);downloadCsv(`pos-report-${from}_${to}.csv`,[['品名','條碼','分類','數量','金額','成本'],...r.products.map(p=>[p.name,p.sku,p.cat,p.qty,p.amount,p.cost])]);},
+  'export-report':()=>{const [from,to]=rangeDates(ui.reports.range,ui.reports),r=P.report(scoped(S.orders),from,to);downloadCsv(`pos-report-${fileTag(ui.scope==='all'?'all':cur())}${from}_${to}.csv`,[['品名','條碼','分類','數量','金額','成本'],...r.products.map(p=>[p.name,p.sku,p.cat,p.qty,p.amount,p.cost])]);},
   theme:el=>{
    const dark=el.dataset.theme==='dark';document.documentElement.classList.toggle('dark',dark);
    try{localStorage.setItem('samtss-theme',dark?'dark':'light');}catch{}
@@ -1017,7 +1164,7 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   },
   backup:()=>backup(),
   restore:()=>$('#pos-restore-file').click(),
-  'clear-demo':()=>confirmDialog('清除示範資料','會刪除示範商品、分類、會員，以及目前所有訂單、庫存異動與交班紀錄；門市設定會保留。確定要清除嗎？','clear-demo-yes','清除示範資料',true),
+  'clear-demo':()=>confirmDialog('清除示範資料','會刪除示範商品、分類、會員、廠商，以及目前所有訂單、庫存異動與交班紀錄；門市與設定會保留，門市名稱可以在「設定」修改。確定要清除嗎？','clear-demo-yes','清除示範資料',true),
   'clear-demo-yes':()=>wipe(true),
   wipe:()=>confirmDialog('清除全部資料','會刪除這個瀏覽器裡的所有商品、訂單、會員、交班紀錄與設定，而且無法復原。建議先下載備份檔。確定要清除嗎？','wipe-yes','全部清除',true),
   'wipe-yes':()=>wipe(false),
@@ -1040,10 +1187,10 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   },
   'order-discount':form=>{const d=readDiscount(form);if(d.error)return formError(form,d.error);cart.discount=d.discount;saveCart();closeDialog();renderCart();},
   points:form=>{const n=P.parseAmount(form.elements.points.value);if(Number.isNaN(n))return formError(form,'點數請填 0 以上的整數');cart.pointsUse=Math.min(n,totals().maxPoints);saveCart();closeDialog();renderCart();},
-  pay:checkout,refund:doRefund,promo:savePromo,product:saveProduct,categories:saveCategories,stock:saveStock,member:saveMember,settings:saveSettings,
+  pay:checkout,refund:doRefund,promo:savePromo,product:saveProduct,categories:saveCategories,stock:saveStock,transfer:saveTransfer,suppliers:saveSuppliers,login:saveLogin,member:saveMember,settings:saveSettings,
   'shift-open':form=>{
    const opening=P.parseAmount(form.elements.opening.value||'0');if(Number.isNaN(opening))return formError(form,'零用金請填數字');
-   S.settings.cashier=form.elements.cashier.value;S.shifts.push({id:uid(),openedAt:Date.now(),closedAt:0,cashier:S.settings.cashier,openingCash:opening,cashMoves:[],countedCash:null,note:''});
+   S.settings.cashier=form.elements.cashier.value;S.shifts.push({id:uid(),storeId:cur(),openedAt:Date.now(),closedAt:0,cashier:S.settings.cashier,openingCash:opening,cashMoves:[],countedCash:null,note:''});
    save('shifts','settings');toast('已開班');render();updateBar();
   },
   'cash-move':form=>{
@@ -1054,8 +1201,8 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   'day-close':form=>{
    const text=form.elements.counted.value.trim(),counted=text===''?null:P.parseAmount(text),day=ui.close.day;
    if(counted!==null&&Number.isNaN(counted))return formError(form,'實點現金請填數字，不點現金可以留空');
-   const summary=P.daySummary(S.orders,S.shifts,day),record={day,closedAt:Date.now(),cashier:currentShift()?.cashier||S.settings.cashier,countedCash:counted,note:form.elements.note.value.trim(),summary};
-   S.closes=[...S.closes.filter(c=>c.day!==day),record];
+   const summary=dayOf(day),record={day,storeId:cur(),storeName:curStore().name,closedAt:Date.now(),cashier:currentShift()?.cashier||S.settings.cashier,countedCash:counted,note:form.elements.note.value.trim(),summary};
+   S.closes=[...S.closes.filter(c=>!(c.day===day&&here(c))),record];
    save('closes');render();openDayReport(day);
   },
   'shift-close':form=>{
@@ -1082,7 +1229,7 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   'promo-bundle':()=>updateBundleSum(),
   'close-counted':el=>{
    const box=$('#pos-close-diff');if(!box)return;
-   const expected=P.daySummary(S.orders,S.shifts,ui.close.day).expectedCash,counted=el.value.trim()===''?NaN:P.parseAmount(el.value);
+   const expected=dayOf(ui.close.day).expectedCash,counted=el.value.trim()===''?NaN:P.parseAmount(el.value);
    if(Number.isNaN(counted)){box.dataset.state='due';box.innerHTML=`<span>應有 ${money(expected)}</span>`;return;}
    const diff=counted-expected;box.dataset.state=diff===0?'ok':'due';box.innerHTML=`<span>${diff===0?'金額相符':diff>0?'多出':'短少'}</span><b>${diff===0?money(counted):money(Math.abs(diff))}</b>`;
   },
@@ -1095,6 +1242,12 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
  };
  const changes={
   'products-cat':el=>{ui.products.cat=el.value;renderProductList();},
+  'stock-store':el=>{ui.stock.store=el.value;renderStock();},
+  'stock-cat':el=>{ui.stock.cat=el.value;renderStock();},
+  'stock-brand':el=>{ui.stock.brand=el.value;renderStock();},
+  'stock-supplier':el=>{ui.stock.supplier=el.value;renderStock();},
+  'stock-dialog-store':el=>{const form=el.form,p=product(form.elements.id.value),box=$('.pos-stock-now',form);if(!p||!box)return;if(form.dataset.form==='transfer'){box.textContent='目前庫存：'+stockText(p);return;}const q=P.stockAt(p,el.value);box.textContent=storeName(el.value)+' 目前庫存 '+q;if(form.elements.mode.value==='count')form.elements.qty.value=q;},
+  'transfer-product':el=>{const p=product(el.value),box=$('.pos-stock-now',el.form);if(p&&box)box.textContent='目前庫存：'+stockText(p);},
   'close-day':el=>{ui.close.day=el.value&&el.value<=today()?el.value:today();renderClose();},
   'reports-from':el=>{const [,to]=rangeDates(ui.reports.range,ui.reports);ui.reports={range:'custom',from:el.value||today(),to};renderReports();},
   'reports-to':el=>{const [from]=rangeDates(ui.reports.range,ui.reports);ui.reports={range:'custom',from,to:el.value||today()};renderReports();}

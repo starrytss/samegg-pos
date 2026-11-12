@@ -70,7 +70,7 @@ else{
     const result=await target.webContents.executeJavaScript(`new Promise(resolve=>{
      const started=Date.now(),check=()=>{
       const app=document.getElementById('pos-app');
-      if(app&&app.dataset.ready==='true')return resolve({ready:true,items:document.querySelectorAll('.pos-item').length,desktop:document.documentElement.classList.contains('pos-desktop'),warn:!!document.querySelector('.pos-banner-warn'),font:getComputedStyle(document.body).fontFamily});
+      if(app&&app.dataset.ready==='true')return resolve({ready:true,items:document.querySelectorAll('.pos-item').length,desktop:document.documentElement.classList.contains('pos-desktop'),warn:!!document.querySelector('.pos-banner-warn'),login:!!document.querySelector('#pos-dialog[open] [data-form=login]'),font:getComputedStyle(document.body).fontFamily});
       if(Date.now()-started>30000)return resolve({ready:false});
       setTimeout(check,200);
      };check();
@@ -80,6 +80,7 @@ else{
     if(!result.desktop)return fail('desktop mode was not detected');
     if(!result.items)return fail('no products were shown');
     if(result.warn)return fail('storage is not available');
+    if(!result.login)return fail('the store login did not open');
     console.log('SMOKE OK: '+result.items+' products, font '+result.font);report('SMOKE OK: '+result.items+' products, font '+result.font);
     app.exit(0);
    }catch(error){fail(String(error&&error.message||error));}

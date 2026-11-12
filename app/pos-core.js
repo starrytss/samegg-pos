@@ -477,16 +477,17 @@
   row.push(cell);if(row.some(value=>value.trim()!==''))rows.push(row);
   return rows;
  }
- const PRODUCT_COLUMNS=['名稱','條碼','分類','售價','成本','庫存','安全庫存','狀態'];
- function productsToRows(products,categories){
-  const names=new Map(categories.map(c=>[c.id,c.name]));
-  return [PRODUCT_COLUMNS,...products.map(p=>[p.name,p.sku||'',names.get(p.categoryId)||'',p.price,p.cost||0,p.track?p.stock:'',p.track?p.lowStock:'',p.active===false?'下架':'上架'])];
+ const PRODUCT_COLUMNS=['名稱','條碼','分類','品牌','廠商','售價','成本','庫存','安全庫存','狀態'];
+ // 庫存欄是 storeId 這家門市的數量；沒給 storeId 時用舊欄位 stock。
+ function productsToRows(products,categories,suppliers,storeId){
+  const names=new Map((categories||[]).map(c=>[c.id,c.name])),vendors=new Map((suppliers||[]).map(s=>[s.id,s.name]));
+  return [PRODUCT_COLUMNS,...products.map(p=>[p.name,p.sku||'',names.get(p.categoryId)||'',p.brand||'',vendors.get(p.supplierId)||'',p.price,p.cost||0,p.track?(storeId?stockAt(p,storeId):int(p.stock)):'',p.track?p.lowStock:'',p.active===false?'下架':'上架'])];
  }
  // 讀商品 CSV：第一列是欄位名稱，順序可以不同；回傳可匯入的資料與每一列的問題。
  function productsFromRows(rows){
   if(!rows.length)return {items:[],errors:['檔案是空的']};
   const header=rows[0].map(cell=>cell.trim()),at=name=>header.indexOf(name);
-  const col={name:at('名稱'),sku:at('條碼'),category:at('分類'),price:at('售價'),cost:at('成本'),stock:at('庫存'),low:at('安全庫存'),status:at('狀態')};
+  const col={name:at('名稱'),sku:at('條碼'),category:at('分類'),brand:at('品牌'),supplier:at('廠商'),price:at('售價'),cost:at('成本'),stock:at('庫存'),low:at('安全庫存'),status:at('狀態')};
   if(col.name<0||col.price<0)return {items:[],errors:['第一列需要有「名稱」和「售價」欄位']};
   const items=[],errors=[],seen=new Set();
   rows.slice(1).forEach((row,index)=>{
@@ -497,13 +498,13 @@
    if(sku&&seen.has(sku)){errors.push('第 '+line+' 列的條碼 '+sku+' 重複');return;}
    if(sku)seen.add(sku);
    const stockText=get(col.stock),stock=stockText===''?NaN:Number(stockText.replace(/,/g,'')),cost=parseAmount(get(col.cost)),low=parseAmount(get(col.low));
-   items.push({name:name.slice(0,60),sku,category:get(col.category).slice(0,20),price,cost:Number.isNaN(cost)?0:cost,track:Number.isFinite(stock),stock:Number.isFinite(stock)?Math.round(stock):0,lowStock:Number.isNaN(low)?null:low,active:get(col.status)!=='下架'});
+   items.push({name:name.slice(0,60),sku,category:get(col.category).slice(0,20),brand:get(col.brand).slice(0,30),supplier:get(col.supplier).slice(0,30),price,cost:Number.isNaN(cost)?0:cost,track:Number.isFinite(stock),stock:Number.isFinite(stock)?Math.round(stock):0,lowStock:Number.isNaN(low)?null:low,active:get(col.status)!=='下架'});
   });
   return {items,errors};
  }
  function ordersToRows(orders){
-  const rows=[['單號','時間','收銀員','會員','品項數','小計','折扣','點數折抵','稅額','總計','付款方式','找零','已退款','狀態','統一編號','載具','備註','會員等級','優惠折扣','會員等級折扣','贈品件數']];
-  for(const o of orders)rows.push([o.id,formatTime(o.t),o.cashier,o.memberName,o.lines.reduce((s,l)=>s+l.qty,0),o.gross,o.lineDiscount+o.orderDiscount,o.pointsValue,o.tax,o.total,o.payments.map(p=>p.name+' '+p.amount).join('／'),o.change,refundedTotal(o),STATUS[o.status]||o.status,o.buyerTaxId,o.carrier,o.note,o.memberLevel||'',o.promoDiscount||0,o.levelDiscount||0,o.giftQty||0]);
+  const rows=[['單號','時間','收銀員','會員','品項數','小計','折扣','點數折抵','稅額','總計','付款方式','找零','已退款','狀態','統一編號','載具','備註','會員等級','優惠折扣','會員等級折扣','贈品件數','門市']];
+  for(const o of orders)rows.push([o.id,formatTime(o.t),o.cashier,o.memberName,o.lines.reduce((s,l)=>s+l.qty,0),o.gross,o.lineDiscount+o.orderDiscount,o.pointsValue,o.tax,o.total,o.payments.map(p=>p.name+' '+p.amount).join('／'),o.change,refundedTotal(o),STATUS[o.status]||o.status,o.buyerTaxId,o.carrier,o.note,o.memberLevel||'',o.promoDiscount||0,o.levelDiscount||0,o.giftQty||0,o.storeName||'']);
   return rows;
  }
  function orderLinesToRows(orders){
@@ -511,6 +512,60 @@
   for(const o of orders)for(const l of o.lines)rows.push([o.id,formatTime(o.t),l.name,l.sku,l.cat,l.price,l.qty,l.gift?0:l.price*l.qty-l.net,l.share,l.returned,l.refunded,l.promoLabel||'',l.gift?(l.giftReason||'贈品'):'',l.bundle?l.bundle.items.map(x=>x.name+'×'+x.qty).join('、'):'']);
   return rows;
  }
+
+ // ---------- 多門市庫存 ----------
+ // 每家門市的庫存放在 product.stocks[門市 id]。舊資料只有 product.stock，由 migrateStocks 歸到第一家門市。
+ function stockAt(product,storeId){
+  const stocks=product&&product.stocks;
+  return stocks&&Object.prototype.hasOwnProperty.call(stocks,storeId)?int(stocks[storeId]):0;
+ }
+ function totalStock(product,storeIds){
+  const stocks=(product&&product.stocks)||{};
+  return (storeIds||Object.keys(stocks)).reduce((sum,id)=>sum+stockAt(product,id),0);
+ }
+ // 改某家門市的庫存，回傳改完的數量。
+ function addStock(product,storeId,delta){
+  product.stocks={...(product.stocks||{})};
+  product.stocks[storeId]=stockAt(product,storeId)+int(delta);
+  return product.stocks[storeId];
+ }
+ // 回傳有沒有改到資料。
+ function migrateStocks(products,storeId){
+  let changed=false;
+  for(const product of products||[]){
+   if(product.stocks&&typeof product.stocks==='object'&&!Array.isArray(product.stocks))continue;
+   product.stocks={[storeId]:int(product.stock)};
+   delete product.stock;
+   changed=true;
+  }
+  return changed;
+ }
+ // 從 A 門市調撥到 B 門市；數量不夠或門市相同時丟出錯誤。
+ function transferStock(product,fromId,toId,qty){
+  const n=int(qty);
+  if(fromId===toId)throw Error('請選擇不同的門市');
+  if(!(n>0))throw Error('調撥數量要大於 0');
+  if(n>stockAt(product,fromId))throw Error('調出的門市庫存只有 '+stockAt(product,fromId));
+  return {from:addStock(product,fromId,-n),to:addStock(product,toId,n)};
+ }
+ // 庫存頁的篩選：門市、分類、品牌、廠商、關鍵字、低庫存／缺貨。
+ function filterStock(products,f){
+  const q=f||{};
+  return (products||[]).filter(p=>{
+   if(!p.track)return false;
+   if(q.categoryId&&q.categoryId!=='all'&&(p.categoryId||'')!==(q.categoryId==='none'?'':q.categoryId))return false;
+   if(q.brand&&q.brand!=='all'&&(p.brand||'')!==(q.brand==='none'?'':q.brand))return false;
+   if(q.supplierId&&q.supplierId!=='all'&&(p.supplierId||'')!==(q.supplierId==='none'?'':q.supplierId))return false;
+   if(!matchProduct(p,q.q||''))return false;
+   if(q.level==='out'||q.level==='low'){
+    const qty=q.storeId&&q.storeId!=='all'?stockAt(p,q.storeId):totalStock(p,q.storeIds);
+    if(q.level==='out')return qty<=0;
+    return qty>0&&isLowStock(p,qty);
+   }
+   return true;
+  });
+ }
+ const brandsOf=products=>[...new Set((products||[]).map(p=>String(p.brand||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-Hant'));
 
  // ---------- 搜尋 ----------
  function matchProduct(product,keyword){
@@ -522,9 +577,9 @@
   const key=normalizeCode(code);
   return key?products.find(p=>p.active!==false&&normalizeCode(p.sku)===key)||null:null;
  }
- const isLowStock=product=>!!product.track&&product.stock<=int(product.lowStock);
+ const isLowStock=(product,qty=product.stock)=>!!product.track&&int(qty)<=int(product.lowStock);
 
- const api={DEFAULT_SETTINGS,DEFAULT_METHODS,STATUS,PRODUCT_COLUMNS,int,clamp,parseAmount,formatMoney,dateKey,formatTime,dayStart,addDays,allocate,validTaxId,normalizeCarrier,validCarrier,ean13,normalizeCode,discountAmount,discountLabel,foldToPct,lineTotals,computeCart,cleanLevels,levelOf,findMember,parseLocal,promoState,PROMO_STATE,saleLabel,activePromos,promoFor,bundleLine,settlePayments,cashSuggestions,nextOrderId,buildOrder,refundedTotal,orderNet,cashReceived,paymentBreakdown,refundQuote,applyRefund,shiftSummary,daySummary,methodBreakdown,dayReportRows,dayChanged,closesToRows,report,toCsv,parseCsv,productsToRows,productsFromRows,ordersToRows,orderLinesToRows,matchProduct,findByCode,isLowStock};
+ const api={DEFAULT_SETTINGS,DEFAULT_METHODS,STATUS,PRODUCT_COLUMNS,int,clamp,parseAmount,formatMoney,dateKey,formatTime,dayStart,addDays,allocate,validTaxId,normalizeCarrier,validCarrier,ean13,normalizeCode,discountAmount,discountLabel,foldToPct,lineTotals,computeCart,cleanLevels,levelOf,findMember,parseLocal,promoState,PROMO_STATE,saleLabel,activePromos,promoFor,bundleLine,settlePayments,cashSuggestions,nextOrderId,buildOrder,refundedTotal,orderNet,cashReceived,paymentBreakdown,refundQuote,applyRefund,shiftSummary,daySummary,methodBreakdown,dayReportRows,dayChanged,closesToRows,report,toCsv,parseCsv,productsToRows,productsFromRows,ordersToRows,orderLinesToRows,matchProduct,findByCode,isLowStock,stockAt,totalStock,addStock,migrateStocks,transferStock,filterStock,brandsOf};
  if(typeof module==='object'&&module.exports)module.exports=api;
  else root.SamEggPos=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
