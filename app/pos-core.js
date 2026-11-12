@@ -14,7 +14,9 @@
   currency:'NT$',taxMode:'included',taxRate:5,
   earnPer:100,pointValue:1,
   receiptWidth:58,autoPrint:false,sound:true,blockOversell:false,lowStock:5,
-  cashiers:['店長'],cashier:'店長',methods:DEFAULT_METHODS.map(m=>({...m})),demo:false
+  cashiers:['店長'],cashier:'店長',methods:DEFAULT_METHODS.map(m=>({...m})),demo:false,
+  // 會員等級依累計消費決定；pct 是該等級的整單折扣（%），0 表示只顯示等級不打折。
+  levels:[{name:'一般會員',min:0,pct:0},{name:'銀卡會員',min:5000,pct:5},{name:'金卡會員',min:20000,pct:10}]
  });
 
  // ---------- 基本工具 ----------
@@ -69,6 +71,90 @@
  }
  function normalizeCode(text){return String(text??'').normalize('NFKC').trim().toUpperCase();}
 
+ // ---------- 會員 ----------
+ // 依累計消費找出會員等級，並算出離下一級還差多少。
+ function cleanLevels(levels){
+  return (levels||[]).filter(l=>l&&String(l.name||'').trim()).map(l=>({name:String(l.name).trim().slice(0,12),min:Math.max(0,int(l.min)),pct:clamp(Math.round((Number(l.pct)||0)*10)/10,0,100)})).sort((a,b)=>a.min-b.min);
+ }
+ function levelOf(member,levels){
+  if(!member)return null;
+  const list=cleanLevels(levels),spent=Math.max(0,int(member.total));
+  let rank=-1;
+  list.forEach((level,i)=>{if(spent>=level.min)rank=i;});
+  if(rank<0)return null;
+  const next=list[rank+1]||null;
+  return {...list[rank],rank,count:list.length,next,toNext:next?next.min-spent:0};
+ }
+ // 掃描或輸入會員卡號（或手機號碼）找會員。
+ function findMember(members,code){
+  const key=normalizeCode(code),digits=key.replace(/[^\d]/g,'');
+  if(!key)return null;
+  return (members||[]).find(m=>m.code&&normalizeCode(m.code)===key)||(digits.length>=8&&digits===key.replace(/-/g,'')?(members||[]).find(m=>String(m.phone||'').replace(/[^\d]/g,'')===digits):null)||null;
+ }
+
+ // ---------- 優惠活動 ----------
+ // promo：{id,type:'bogo'|'sale'|'bundle',name,active,from,to,dayFrom,dayTo,productIds,mode:'pct'|'price',value,items:[{pid,qty}],price}
+ // from／to 是 YYYY-MM-DDTHH:MM（裝置當地時間，可留空）；dayFrom／dayTo 是每天的時段 HH:MM（可留空，可跨午夜）。
+ function parseLocal(text,endOfDay){
+  const match=String(text||'').match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
+  if(!match)return null;
+  const [,y,mo,d,h,mi]=match.map(Number);
+  if(match[4]===undefined)return endOfDay?new Date(y,mo-1,d+1).getTime()-1:new Date(y,mo-1,d).getTime();
+  return new Date(y,mo-1,d,h,mi).getTime();
+ }
+ const minutesOf=text=>{const m=String(text||'').match(/^(\d{2}):(\d{2})$/);return m?Number(m[1])*60+Number(m[2]):null;};
+ // off：停用；upcoming：還沒開始；ended：已結束；idle：今天的時段外；active：進行中。
+ function promoState(promo,time){
+  if(!promo||promo.active===false)return 'off';
+  const from=parseLocal(promo.from,false),to=parseLocal(promo.to,true);
+  if(from!=null&&time<from)return 'upcoming';
+  if(to!=null&&time>to)return 'ended';
+  const a=minutesOf(promo.dayFrom),b=minutesOf(promo.dayTo);
+  if(a!=null&&b!=null&&a!==b){
+   const d=new Date(time),m=d.getHours()*60+d.getMinutes();
+   const inside=a<b?m>=a&&m<b:m>=a||m<b;
+   if(!inside)return 'idle';
+  }
+  return 'active';
+ }
+ const PROMO_STATE=Object.freeze({off:'停用',upcoming:'尚未開始',ended:'已結束',idle:'不在時段內',active:'進行中'});
+ function saleLabel(promo){
+  if(promo.mode==='price')return '特價';
+  const keep=100-clamp(Number(promo.value)||0,0,100);
+  return '限時 '+(keep%10===0?String(keep/10):String(keep))+' 折';
+ }
+ // 每個商品現在適用的優惠：買一送一優先，其次是限時折扣；同類型取清單裡第一個。
+ function activePromos(promos,time){
+  const bogo=new Map(),sale=new Map(),bundles=[];
+  for(const promo of promos||[]){
+   if(promoState(promo,time)!=='active')continue;
+   if(promo.type==='bundle'){bundles.push(promo);continue;}
+   for(const pid of promo.productIds||[]){
+    if(promo.type==='bogo'&&!bogo.has(pid))bogo.set(pid,promo);
+    if(promo.type==='sale'&&!sale.has(pid))sale.set(pid,promo);
+   }
+  }
+  return {bogo,sale,bundles};
+ }
+ function promoFor(pid,promos,time){
+  const {bogo,sale}=activePromos(promos,time);
+  if(bogo.has(pid))return {promo:bogo.get(pid),label:'買一送一'};
+  if(sale.has(pid)){const promo=sale.get(pid);return {promo,label:saleLabel(promo)};}
+  return null;
+ }
+ // 禮包：照設定的商品與數量組成一行，價格是禮包價；回傳 null 表示有商品已被刪除。
+ function bundleLine(bundle,products){
+  const items=[];let value=0,cost=0;
+  for(const item of bundle.items||[]){
+   const product=(products||[]).find(p=>p.id===item.pid),qty=Math.max(1,int(item.qty));
+   if(!product)return null;
+   items.push({pid:product.id,name:product.name,qty});
+   value+=int(product.price)*qty;cost+=int(product.cost)*qty;
+  }
+  if(!items.length)return null;
+  return {pid:'bundle:'+bundle.id,name:bundle.name||'禮包',sku:'',cat:'禮包',price:Math.max(0,int(bundle.price)),cost,qty:1,discount:null,note:'',bundle:{id:bundle.id,items,value}};
+ }
+
  // ---------- 購物車計算 ----------
  // 折扣：{type:'pct',value:10} 打九折（折 10%），{type:'amt',value:20} 折 20 元。
  function discountAmount(base,discount){
@@ -92,9 +178,12 @@
   const n=Number(value),keep=n<10?n*10:n;
   return keep>0&&keep<100?Math.round((100-keep)*10)/10:NaN;
  }
- function lineTotals(line){
-  const qty=Math.max(0,int(line.qty)),gross=int(line.price)*qty,off=discountAmount(gross,line.discount);
-  return {gross,off,net:gross-off};
+ function lineTotals(line,promoOff=0){
+  const qty=Math.max(0,int(line.qty));
+  // 贈品：0 元，不算折扣，也不套任何優惠；價值另外記在 giftValue。
+  if(line.gift)return {gross:0,off:0,promoOff:0,net:0,giftValue:int(line.price)*qty};
+  const gross=int(line.price)*qty,promo=clamp(int(promoOff),0,gross),off=discountAmount(gross-promo,line.discount);
+  return {gross,off,promoOff:promo,net:gross-promo-off,giftValue:0};
  }
  function taxOf(base,settings){
   const rate=Math.max(0,Number(settings.taxRate)||0)/100;
@@ -102,21 +191,49 @@
   if(settings.taxMode==='included')return {tax:Math.round(base-base/(1+rate)),total:base};
   return {tax:0,total:base};
  }
- // cart:{lines,discount,pointsUse}；member:{points}；回傳每行金額與整張單的合計。
- function computeCart(cart,settings,member){
-  const lines=(cart.lines||[]).map(line=>({...line,...lineTotals(line)}));
+ // cart:{lines,discount,pointsUse}；member:{points,total}；promos：優惠活動；time：結帳時間。
+ // 順序：單品優惠（買一送一或限時折扣）→ 單品手動折扣 → 整單折扣 → 會員等級折扣 → 點數 → 稅。
+ function computeCart(cart,settings,member,promos,time){
+  const now=time??Date.now(),{bogo,sale}=activePromos(promos,now),src=cart.lines||[];
+  const promoOff=src.map(()=>0),promoLabel=src.map(()=>''),promoId=src.map(()=>'');
+  src.forEach((line,i)=>{
+   const promo=!line.gift&&!line.bundle&&line.pid&&!bogo.has(line.pid)&&sale.get(line.pid);
+   if(!promo)return;
+   const price=int(line.price),unit=promo.mode==='price'?clamp(price-int(promo.value),0,price):Math.round(price*clamp(Number(promo.value)||0,0,100)/100);
+   if(unit>0){promoOff[i]=unit*Math.max(0,int(line.qty));promoLabel[i]=promo.name||saleLabel(promo);promoId[i]=promo.id;}
+  });
+  // 買一送一：同一商品每 2 件送 1 件，從前面的行開始扣；件數是單數時提醒收銀員還可以再送一件。
+  const bogoInfo=[];
+  for(const [pid,promo] of bogo){
+   const at=src.map((line,i)=>i).filter(i=>src[i].pid===pid&&!src[i].gift&&!src[i].bundle);
+   const qty=at.reduce((sum,i)=>sum+Math.max(0,int(src[i].qty)),0);
+   if(!qty)continue;
+   let free=Math.floor(qty/2);
+   bogoInfo.push({pid,name:src[at[0]].name,qty,free,odd:qty%2===1,promoId:promo.id,promoName:promo.name||'買一送一'});
+   for(const i of at){
+    const take=Math.min(free,Math.max(0,int(src[i].qty)));free-=take;
+    if(take>0){promoOff[i]=take*int(src[i].price);promoLabel[i]='買一送一（送 '+take+'）';promoId[i]=promo.id;}
+   }
+  }
+  const lines=src.map((line,i)=>({...line,...lineTotals(line,promoOff[i]),promoLabel:promoOff[i]?promoLabel[i]:'',promoId:promoOff[i]?promoId[i]:''}));
   const subtotal=lines.reduce((sum,line)=>sum+line.net,0);
   const gross=lines.reduce((sum,line)=>sum+line.gross,0);
+  const promoDiscount=lines.reduce((sum,line)=>sum+line.promoOff,0);
   const orderDiscount=discountAmount(subtotal,cart.discount);
-  const afterDiscount=subtotal-orderDiscount;
+  const afterOrder=subtotal-orderDiscount;
+  const level=levelOf(member,settings.levels);
+  const levelDiscount=level&&level.pct>0?discountAmount(afterOrder,{type:'pct',value:level.pct}):0;
+  const afterDiscount=afterOrder-levelDiscount;
   const pointValue=Math.max(1,int(settings.pointValue)||1);
   const maxPoints=member?Math.min(Math.max(0,int(member.points)),Math.floor(afterDiscount/pointValue)):0;
   const pointsUsed=clamp(int(cart.pointsUse),0,maxPoints),pointsValue=pointsUsed*pointValue;
   const {tax,total}=taxOf(afterDiscount-pointsValue,settings);
   const earnPer=int(settings.earnPer);
+  const gifts=lines.filter(line=>line.gift);
   return {
-   lines,qty:lines.reduce((sum,line)=>sum+int(line.qty),0),gross,lineDiscount:gross-subtotal,subtotal,
-   orderDiscount,maxPoints,pointsUsed,pointsValue,tax,total,
+   lines,qty:lines.reduce((sum,line)=>sum+int(line.qty),0),gross,lineDiscount:gross-subtotal,promoDiscount,subtotal,
+   orderDiscount,level,levelDiscount,maxPoints,pointsUsed,pointsValue,tax,total,bogo:bogoInfo,
+   giftQty:gifts.reduce((sum,line)=>sum+int(line.qty),0),giftValue:gifts.reduce((sum,line)=>sum+line.giftValue,0),
    pointsEarned:member&&earnPer>0?Math.floor(total/earnPer):0
   };
  }
@@ -144,8 +261,8 @@
   const day=dateKey(time).replaceAll('-',''),n=seq&&seq.day===day?seq.n+1:1;
   return {id:day+'-'+pad(n,4),seq:{day,n}};
  }
- function buildOrder({id,time,cart,settings,member,payments,cashier,shiftId,buyerTaxId,carrier,note}){
-  const totals=computeCart(cart,settings,member),settled=settlePayments(totals.total,payments);
+ function buildOrder({id,time,cart,settings,member,payments,cashier,shiftId,buyerTaxId,carrier,note,promos}){
+  const totals=computeCart(cart,settings,member,promos,time),settled=settlePayments(totals.total,payments);
   if(!totals.lines.length)throw Error('購物車是空的');
   if(!settled.ok)throw Error(settled.error);
   // 每一行實際收到的金額（已扣整單折扣與點數、含稅），退貨時照這個比例退。
@@ -153,9 +270,11 @@
   return {
    id,t:time,cashier:cashier||'',shiftId:shiftId||'',
    memberId:member?member.id:'',memberName:member?member.name:'',
-   lines:totals.lines.map((line,i)=>({pid:line.pid||'',name:line.name,sku:line.sku||'',cat:line.cat||'',price:int(line.price),qty:int(line.qty),cost:int(line.cost),discount:line.off,discountLabel:discountLabel(line.discount),note:line.note||'',net:line.net,share:shares[i],returned:0,refunded:0})),
-   gross:totals.gross,lineDiscount:totals.lineDiscount,subtotal:totals.subtotal,
+   lines:totals.lines.map((line,i)=>({pid:line.pid||'',name:line.name,sku:line.sku||'',cat:line.cat||'',price:int(line.price),qty:int(line.qty),cost:int(line.cost),discount:line.off,discountLabel:discountLabel(line.discount),promoOff:line.promoOff,promoLabel:line.promoLabel,promoId:line.promoId,gift:!!line.gift,giftReason:line.gift?String(line.giftReason||'贈品'):'',giftValue:line.giftValue,bundle:line.bundle?{id:line.bundle.id,items:line.bundle.items.map(item=>({pid:item.pid,name:item.name,qty:int(item.qty)})),value:int(line.bundle.value)}:null,note:line.note||'',net:line.net,share:shares[i],returned:0,refunded:0})),
+   gross:totals.gross,lineDiscount:totals.lineDiscount,promoDiscount:totals.promoDiscount,subtotal:totals.subtotal,
    orderDiscount:totals.orderDiscount,orderDiscountLabel:discountLabel(cart.discount),
+   memberLevel:totals.level?totals.level.name:'',levelPct:totals.level?totals.level.pct:0,levelDiscount:totals.levelDiscount,
+   giftQty:totals.giftQty,giftValue:totals.giftValue,
    pointsUsed:totals.pointsUsed,pointsValue:totals.pointsValue,pointsEarned:totals.pointsEarned,earnPer:int(settings.earnPer),
    taxMode:settings.taxMode,taxRate:Number(settings.taxRate)||0,tax:totals.tax,total:totals.total,
    payments:settled.payments,paid:settled.paid,change:settled.change,
@@ -215,12 +334,13 @@
  // ---------- 交班 ----------
  function emptyMethodRow(method){return {id:method.id,name:method.name,cash:!!method.cash,sales:0,refunds:0,count:0};}
  function collect(orders,inOrder,inRefund){
-  const methods=new Map(),result={orders:0,items:0,sales:0,tax:0,discount:0,refunds:0,refundCount:0,refundTax:0,cashSales:0,cashRefunds:0};
+  const methods=new Map(),result={orders:0,items:0,sales:0,tax:0,discount:0,refunds:0,refundCount:0,refundTax:0,cashSales:0,cashRefunds:0,giftQty:0,giftCost:0,giftValue:0};
   const row=method=>{if(!methods.has(method.id))methods.set(method.id,emptyMethodRow(method));return methods.get(method.id);};
   for(const order of orders){
    if(inOrder(order)){
     result.orders++;result.sales+=order.total;result.tax+=order.tax;
-    result.discount+=order.lineDiscount+order.orderDiscount+order.pointsValue;
+    result.discount+=order.lineDiscount+order.orderDiscount+(order.levelDiscount||0)+order.pointsValue;
+    for(const line of order.lines)if(line.gift){result.giftQty+=line.qty;result.giftCost+=line.cost*line.qty;result.giftValue+=line.giftValue||line.price*line.qty;}
     result.items+=order.lines.reduce((sum,line)=>sum+line.qty,0);
     result.cashSales+=cashReceived(order);
     for(const p of paymentBreakdown(order)){const r=row(p);r.sales+=p.amount;r.count++;}
@@ -276,7 +396,7 @@
   return [
    ['日結報表',record.day],['日結時間',record.closedAt?formatTime(record.closedAt):'尚未日結'],['經手人',record.cashier||''],[],
    ['付款方式','筆數','收款','退款','淨額'],...methodBreakdown(s,methods).map(m=>[m.name,m.count,m.sales,m.refunds,m.net]),['合計',s.orders,s.sales,s.refunds,s.net],[],
-   ['訂單數',s.orders],['銷售件數',s.items],['折扣與點數折抵',s.discount],['銷售金額',s.sales],['退款',s.refunds],['淨銷售額',s.net],['營業稅',s.netTax],[],
+   ['訂單數',s.orders],['銷售件數',s.items],['折扣與點數折抵',s.discount],['銷售金額',s.sales],['退款',s.refunds],['淨銷售額',s.net],['營業稅',s.netTax],['贈品件數',s.giftQty||0],['贈品成本',s.giftCost||0],[],
    ['開班零用金',s.openingCash],['現金銷售',s.cashSales],['現金退款',s.cashRefunds],['現金存入',s.cashIn],['現金取出',s.cashOut],['應有現金',s.expectedCash],
    ['實點現金',counted??''],['差額',counted==null?'':counted-s.expectedCash],['備註',record.note||'']
   ];
@@ -382,13 +502,13 @@
   return {items,errors};
  }
  function ordersToRows(orders){
-  const rows=[['單號','時間','收銀員','會員','品項數','小計','折扣','點數折抵','稅額','總計','付款方式','找零','已退款','狀態','統一編號','載具','備註']];
-  for(const o of orders)rows.push([o.id,formatTime(o.t),o.cashier,o.memberName,o.lines.reduce((s,l)=>s+l.qty,0),o.gross,o.lineDiscount+o.orderDiscount,o.pointsValue,o.tax,o.total,o.payments.map(p=>p.name+' '+p.amount).join('／'),o.change,refundedTotal(o),STATUS[o.status]||o.status,o.buyerTaxId,o.carrier,o.note]);
+  const rows=[['單號','時間','收銀員','會員','品項數','小計','折扣','點數折抵','稅額','總計','付款方式','找零','已退款','狀態','統一編號','載具','備註','會員等級','優惠折扣','會員等級折扣','贈品件數']];
+  for(const o of orders)rows.push([o.id,formatTime(o.t),o.cashier,o.memberName,o.lines.reduce((s,l)=>s+l.qty,0),o.gross,o.lineDiscount+o.orderDiscount,o.pointsValue,o.tax,o.total,o.payments.map(p=>p.name+' '+p.amount).join('／'),o.change,refundedTotal(o),STATUS[o.status]||o.status,o.buyerTaxId,o.carrier,o.note,o.memberLevel||'',o.promoDiscount||0,o.levelDiscount||0,o.giftQty||0]);
   return rows;
  }
  function orderLinesToRows(orders){
-  const rows=[['單號','時間','品名','條碼','分類','單價','數量','折扣','實收','已退數量','已退金額']];
-  for(const o of orders)for(const l of o.lines)rows.push([o.id,formatTime(o.t),l.name,l.sku,l.cat,l.price,l.qty,l.price*l.qty-l.net,l.share,l.returned,l.refunded]);
+  const rows=[['單號','時間','品名','條碼','分類','單價','數量','折扣','實收','已退數量','已退金額','優惠','贈品','禮包內容']];
+  for(const o of orders)for(const l of o.lines)rows.push([o.id,formatTime(o.t),l.name,l.sku,l.cat,l.price,l.qty,l.gift?0:l.price*l.qty-l.net,l.share,l.returned,l.refunded,l.promoLabel||'',l.gift?(l.giftReason||'贈品'):'',l.bundle?l.bundle.items.map(x=>x.name+'×'+x.qty).join('、'):'']);
   return rows;
  }
 
@@ -404,7 +524,7 @@
  }
  const isLowStock=product=>!!product.track&&product.stock<=int(product.lowStock);
 
- const api={DEFAULT_SETTINGS,DEFAULT_METHODS,STATUS,PRODUCT_COLUMNS,int,clamp,parseAmount,formatMoney,dateKey,formatTime,dayStart,addDays,allocate,validTaxId,normalizeCarrier,validCarrier,ean13,normalizeCode,discountAmount,discountLabel,foldToPct,lineTotals,computeCart,settlePayments,cashSuggestions,nextOrderId,buildOrder,refundedTotal,orderNet,cashReceived,paymentBreakdown,refundQuote,applyRefund,shiftSummary,daySummary,methodBreakdown,dayReportRows,dayChanged,closesToRows,report,toCsv,parseCsv,productsToRows,productsFromRows,ordersToRows,orderLinesToRows,matchProduct,findByCode,isLowStock};
+ const api={DEFAULT_SETTINGS,DEFAULT_METHODS,STATUS,PRODUCT_COLUMNS,int,clamp,parseAmount,formatMoney,dateKey,formatTime,dayStart,addDays,allocate,validTaxId,normalizeCarrier,validCarrier,ean13,normalizeCode,discountAmount,discountLabel,foldToPct,lineTotals,computeCart,cleanLevels,levelOf,findMember,parseLocal,promoState,PROMO_STATE,saleLabel,activePromos,promoFor,bundleLine,settlePayments,cashSuggestions,nextOrderId,buildOrder,refundedTotal,orderNet,cashReceived,paymentBreakdown,refundQuote,applyRefund,shiftSummary,daySummary,methodBreakdown,dayReportRows,dayChanged,closesToRows,report,toCsv,parseCsv,productsToRows,productsFromRows,ordersToRows,orderLinesToRows,matchProduct,findByCode,isLowStock};
  if(typeof module==='object'&&module.exports)module.exports=api;
  else root.SamEggPos=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

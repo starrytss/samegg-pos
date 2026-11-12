@@ -13,9 +13,9 @@
  const desktop=/\bSamEggPOS\//.test(navigator.userAgent);
 
  // ---------- 資料 ----------
- const S={settings:{...P.DEFAULT_SETTINGS},categories:[],products:[],members:[],held:[],shifts:[],closes:[],seq:null,orders:[],moves:[]};
- const KV=['settings','categories','products','members','held','shifts','closes','seq'];
- const ui={view:'sale',cat:'all',q:'',orders:{range:'today',q:''},products:{q:'',cat:'all'},stock:{filter:'all',q:''},members:{q:''},reports:{range:'today',from:today(),to:today()},close:{day:today()}};
+ const S={settings:{...P.DEFAULT_SETTINGS},categories:[],products:[],members:[],held:[],shifts:[],closes:[],promos:[],seq:null,orders:[],moves:[]};
+ const KV=['settings','categories','products','members','held','shifts','closes','promos','seq'];
+ const ui={promoQ:'',view:'sale',cat:'all',q:'',orders:{range:'today',q:''},products:{q:'',cat:'all'},stock:{filter:'all',q:''},members:{q:''},reports:{range:'today',from:today(),to:today()},close:{day:today()},giftMode:false};
  let cart={lines:[],discount:null,pointsUse:0,memberId:''},pay=null,memoryOnly=false;
 
  const request=req=>new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
@@ -73,7 +73,16 @@
   S.categories=cats;
   S.products=rows.map(([name,cat,price,cost,stock],i)=>({id:uid()+i,name,sku:P.ean13('20000000'+String(i+1).padStart(4,'0')),categoryId:cats[cat].id,price,cost,track:true,stock,lowStock:5,active:true}));
   S.products.push({id:uid()+'bag',name:'購物袋',sku:P.ean13('200000009001'),categoryId:cats[3].id,price:2,cost:1,track:false,stock:0,lowStock:0,active:true});
-  S.members=[{id:uid()+'m',name:'王小明',phone:'0912345678',points:120,total:0,visits:0,note:'示範會員',createdAt:Date.now()}];
+  S.members=[
+   {id:uid()+'m',name:'王小明',code:'M0001',phone:'0912345678',points:120,total:0,visits:0,note:'示範會員',createdAt:Date.now()},
+   {id:uid()+'g',name:'陳美玲',code:'M0002',phone:'0933222111',points:860,total:23800,visits:41,note:'示範會員（金卡）',createdAt:Date.now()}
+  ];
+  const pid=name=>S.products.find(p=>p.name===name)?.id;
+  S.promos=[
+   {id:uid()+'p1',type:'bogo',name:'美式咖啡買一送一',active:true,from:'',to:'',dayFrom:'',dayTo:'',productIds:[pid('美式咖啡')]},
+   {id:uid()+'p2',type:'sale',name:'晚間麵包 8 折',active:true,from:'',to:'',dayFrom:'18:00',dayTo:'22:00',productIds:['菠蘿麵包','奶油可頌','鮮奶吐司'].map(pid),mode:'pct',value:20},
+   {id:uid()+'p3',type:'bundle',name:'下午茶組合',active:true,from:'',to:'',dayFrom:'',dayTo:'',items:[{pid:pid('美式咖啡'),qty:1},{pid:pid('巧克力餅乾'),qty:1}],price:75}
+  ];
   S.settings={...P.DEFAULT_SETTINGS,methods:P.DEFAULT_METHODS.map(m=>({...m})),cashiers:['店長'],demo:true};
   S.held=[];S.shifts=[];S.closes=[];S.seq=null;S.orders=[];S.moves=[];
  }
@@ -103,7 +112,16 @@
  const product=id=>S.products.find(p=>p.id===id)||null;
  const catName=id=>S.categories.find(c=>c.id===id)?.name||'';
  const currentShift=()=>S.shifts.find(s=>!s.closedAt)||null;
- const totals=()=>P.computeCart(cart,S.settings,member());
+ const totals=()=>P.computeCart(cart,S.settings,member(),S.promos,Date.now());
+ // 現在可以賣的禮包（活動進行中，而且裡面的商品都還在）。
+ const activeBundles=()=>P.activePromos(S.promos,Date.now()).bundles.map(promo=>({promo,line:P.bundleLine(promo,S.products)})).filter(b=>b.line);
+ // 每個商品要扣多少庫存：禮包拆成裡面的商品，贈品照樣扣。
+ function stockNeeds(lines){
+  const need=new Map(),add=(pid,qty)=>{if(pid)need.set(pid,(need.get(pid)||0)+qty);};
+  for(const line of lines){if(line.bundle)for(const item of line.bundle.items)add(item.pid,item.qty*line.qty);else add(line.pid,line.qty);}
+  return need;
+ }
+ const levelOf=m=>P.levelOf(m,S.settings.levels);
  const methodById=id=>S.settings.methods.find(m=>m.id===id)||S.settings.methods[0];
  let toastTimer=0;
  function toast(message,kind='info'){
@@ -145,6 +163,29 @@
  const RANGES=[['today','今天'],['yesterday','昨天'],['7d','近 7 天'],['month','本月'],['lastmonth','上月'],['all','全部']];
  const rangeChips=(current,act)=>'<div class="pos-chips" role="group" aria-label="日期範圍">'+RANGES.map(([id,label])=>`<button type="button" class="pos-chip" data-act="${act}" data-range="${id}" aria-pressed="${current===id}">${label}</button>`).join('')+'</div>';
  const empty=text=>`<p class="pos-empty">${h(text)}</p>`;
+ // 線條圖示（24×24，跟著文字顏色）。
+ const ICONS={
+  cash:'<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
+  card:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
+  mobile:'<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  transfer:'<path d="M7 4 3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8"/>',
+  wallet:'<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a2 2 0 0 1 2 2v3h-4a2 2 0 0 0 0 4h4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5"/>',
+  cart:'<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  pause:'<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
+  tag:'<path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z"/><circle cx="7.5" cy="7.5" r="1"/>',
+  trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
+  gift:'<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7M7.5 8a2.5 2.5 0 0 1 0-5C9.5 3 12 8 12 8s2.5-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+  percent:'<path d="M19 5 5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+  inbox:'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>'
+ };
+ const icon=(name,cls='pos-ico')=>`<svg class="${cls}" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]||ICONS.wallet}</svg>`;
+ const methodIcon=m=>icon(m.cash?'cash':({card:'card',mobile:'mobile',transfer:'transfer'}[m.id]||'wallet'));
+ // 每個分類一個顏色（8 色輪流），沒有分類的商品用中性色。
+ const tone=categoryId=>{if(categoryId==='bundles')return 'tone-gift';const at=S.categories.findIndex(c=>c.id===categoryId);return at<0?'tone-n':'tone-'+(at%8);};
+ const initial=name=>(Array.from(String(name||'').trim())[0]||'?').toUpperCase();
  const statusTag=order=>`<span class="pos-tag pos-tag-${order.status}">${P.STATUS[order.status]||''}</span>`;
 
  // ---------- 對話框 ----------
@@ -171,7 +212,7 @@
  const errorBox='<p class="pos-form-error" role="alert" hidden></p>';
 
  // ---------- 上方工作列 ----------
- const VIEWS=[['sale','收銀'],['orders','訂單'],['products','商品'],['stock','庫存'],['members','會員'],['shift','交班'],['close','日結'],['reports','報表'],['settings','設定']];
+ const VIEWS=[['sale','收銀'],['orders','訂單'],['products','商品'],['stock','庫存'],['members','會員'],['promos','優惠'],['shift','交班'],['close','日結'],['reports','報表'],['settings','設定']];
  function updateBar(){
   for(const tab of $$('.pos-tab',app)){const on=tab.dataset.view===ui.view;tab.setAttribute('aria-selected',on);tab.tabIndex=on?0:-1;}
   const shift=currentShift(),chip=$('#pos-shift-chip'),now=new Date();
@@ -181,19 +222,20 @@
  }
  function show(name){ui.view=name;render();updateBar();view.scrollTop=0;}
  function render(){
-  ({sale:renderSale,orders:renderOrders,products:renderProducts,stock:renderStock,members:renderMembers,shift:renderShift,close:renderClose,reports:renderReports,settings:renderSettings})[ui.view]();
+  ({sale:renderSale,orders:renderOrders,products:renderProducts,stock:renderStock,members:renderMembers,promos:renderPromos,shift:renderShift,close:renderClose,reports:renderReports,settings:renderSettings})[ui.view]();
   view.dataset.view=ui.view;
  }
 
  // ---------- 收銀 ----------
  function renderSale(){
-  const cats=[['all','全部'],...S.categories.map(c=>[c.id,c.name])];
+  const cats=[['all','全部'],...S.categories.map(c=>[c.id,c.name]),...(activeBundles().length?[['bundles','禮包']]:[])];
   view.innerHTML=`<div class="pos-sale">
 <section class="pos-catalog" aria-label="商品">
 ${memoryOnly?'<p class="pos-banner pos-banner-warn">這個瀏覽器目前無法儲存資料（可能是私密瀏覽模式），重新整理後資料會消失。</p>':''}
 ${S.settings.demo?'<p class="pos-banner">現在是示範商品，可以直接試結帳。準備正式使用時，到「設定」清除示範資料，再建立自己的商品。</p>':''}
-<div class="pos-search"><input id="pos-search" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="搜尋品名，或掃描條碼後按 Enter" aria-label="搜尋商品或輸入條碼" value="${h(ui.q)}"><button type="button" data-act="custom-item">＋ 自訂金額</button></div>
-<div class="pos-chips" id="pos-cats" role="group" aria-label="商品分類">${cats.map(([id,name])=>`<button type="button" class="pos-chip" data-act="cat" data-id="${h(id)}" aria-pressed="${ui.cat===id}">${h(name)}</button>`).join('')}</div>
+${ui.giftMode?`<div class="pos-banner pos-banner-gift"><p><b>贈品模式</b>：點選的商品會以 0 元加入，照樣扣庫存。</p><button type="button" class="pos-soft" data-act="gift-mode">結束贈品模式</button></div>`:''}
+<div class="pos-search"><label class="pos-search-field">${icon('search')}<input id="pos-search" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="搜尋品名，或掃描條碼後按 Enter" aria-label="搜尋商品或輸入條碼" value="${h(ui.q)}"></label><button type="button" class="pos-soft" data-act="custom-item">${icon('plus')}<span>自訂金額</span></button></div>
+<div class="pos-chips pos-cats" id="pos-cats" role="group" aria-label="商品分類">${cats.map(([id,name])=>`<button type="button" class="pos-chip pos-cat ${id==='all'?'tone-all':tone(id)}" data-act="cat" data-id="${h(id)}" aria-pressed="${ui.cat===id}">${h(name)}</button>`).join('')}</div>
 <div class="pos-grid" id="pos-grid"></div>
 </section>
 <section class="pos-cart" id="pos-cart" aria-label="購物車"></section>
@@ -203,38 +245,77 @@ ${S.settings.demo?'<p class="pos-banner">現在是示範商品，可以直接試
  }
  function renderGrid(){
   const grid=$('#pos-grid');if(!grid)return;
-  const list=S.products.filter(p=>p.active!==false&&(ui.cat==='all'||p.categoryId===ui.cat)&&P.matchProduct(p,ui.q));
-  if(!list.length){grid.innerHTML=empty(S.products.length?'找不到符合的商品':'還沒有商品，到「商品」頁新增第一個商品');return;}
+  const time=Date.now(),list=ui.cat==='bundles'?[]:S.products.filter(p=>p.active!==false&&(ui.cat==='all'||p.categoryId===ui.cat)&&P.matchProduct(p,ui.q));
+  const bundles=ui.cat==='all'||ui.cat==='bundles'?activeBundles().filter(b=>P.matchProduct({name:b.line.name,sku:''},ui.q)):[];
+  if(!list.length&&!bundles.length){grid.innerHTML=empty(S.products.length?'找不到符合的商品':'還沒有商品，到「商品」頁新增第一個商品');return;}
   grid.innerHTML=list.slice(0,150).map(p=>{
-   const out=p.track&&p.stock<=0,low=!out&&P.isLowStock(p);
-   return `<button type="button" class="pos-item${out?' is-out':low?' is-low':''}" data-act="add" data-id="${h(p.id)}"><span class="pos-item-name">${h(p.name)}</span><span class="pos-item-meta"><b>${money(p.price)}</b>${p.track?`<small>${out?'缺貨':'剩 '+p.stock}</small>`:''}</span></button>`;
-  }).join('')+(list.length>150?`<p class="pos-more">還有 ${list.length-150} 項，請用搜尋或分類縮小範圍</p>`:'');
+   const out=p.track&&p.stock<=0,low=!out&&P.isLowStock(p),promo=P.promoFor(p.id,S.promos,time);
+   const stock=p.track?`<small class="pos-item-stock">${out?'缺貨':'剩 '+p.stock}</small>`:'';
+   let price=`<b>${money(p.price)}</b>`;
+   if(promo&&promo.promo.type==='sale'){
+    const v=promo.promo.value,unit=promo.promo.mode==='price'?Math.min(p.price,Math.max(0,Math.round(Number(v)||0))):p.price-Math.round(p.price*Math.min(100,Math.max(0,Number(v)||0))/100);
+    if(unit<p.price)price=`<b>${money(unit)}</b><s>${money(p.price)}</s>`;
+   }
+   return `<button type="button" class="pos-item ${tone(p.categoryId)}${out?' is-out':low?' is-low':''}${promo?' has-promo':''}" data-act="add" data-id="${h(p.id)}"><span class="pos-item-top"><span class="pos-item-badge" aria-hidden="true">${h(initial(p.name))}</span>${promo?`<small class="pos-item-promo">${h(promo.label)}</small>`:stock}</span><span class="pos-item-name">${h(p.name)}</span><span class="pos-item-meta">${price}${promo?stock:''}</span></button>`;
+  }).join('')+bundles.map(b=>`<button type="button" class="pos-item tone-gift is-bundle" data-act="add-bundle" data-id="${h(b.promo.id)}"><span class="pos-item-top"><span class="pos-item-badge" aria-hidden="true">禮</span><small class="pos-item-promo">禮包</small></span><span class="pos-item-name">${h(b.line.name)}</span><span class="pos-item-sub">${h(b.line.bundle.items.map(i=>i.name+'×'+i.qty).join('、'))}</span><span class="pos-item-meta"><b>${money(b.line.price)}</b>${b.line.bundle.value>b.line.price?`<s>${money(b.line.bundle.value)}</s>`:''}</span></button>`).join('')+(list.length>150?`<p class="pos-more">還有 ${list.length-150} 項，請用搜尋或分類縮小範圍</p>`:'');
  }
  function renderCart(){
   const box=$('#pos-cart');if(!box)return;
   const t=totals(),m=member(),taxLabel=S.settings.taxMode==='included'?`內含營業稅 ${S.settings.taxRate}%`:S.settings.taxMode==='added'?`營業稅 ${S.settings.taxRate}%`:'';
-  box.innerHTML=`<div class="pos-cart-head"><h2>購物車</h2><div class="pos-cart-tools">${m?`<span class="pos-member-chip"><button type="button" data-act="pick-member" title="更換會員">${h(m.name)}・${m.points} 點</button><button type="button" class="pos-icon" data-act="clear-member" aria-label="取消會員">✕</button></span>`:'<button type="button" data-act="pick-member">＋ 會員</button>'}<button type="button" data-act="held">取單${S.held.length?`<b class="pos-count">${S.held.length}</b>`:''}</button></div></div>
-${t.lines.length?`<ol class="pos-lines">${t.lines.map((line,i)=>`<li class="pos-line"><button type="button" class="pos-line-main" data-act="edit-line" data-i="${i}" aria-label="修改 ${h(line.name)}"><span class="pos-line-name">${h(line.name)}</span><span class="pos-line-sub">${money(line.price)}${line.discount?` <em>${h(P.discountLabel(line.discount))}</em>`:''}${line.note?` ・${h(line.note)}`:''}</span></button><div class="pos-qty"><button type="button" data-act="qty" data-i="${i}" data-d="-1" aria-label="${h(line.name)} 減一">−</button><output aria-label="數量">${line.qty}</output><button type="button" data-act="qty" data-i="${i}" data-d="1" aria-label="${h(line.name)} 加一">＋</button></div><span class="pos-line-total">${money(line.net)}</span></li>`).join('')}</ol>`:empty('點選商品或掃描條碼，把商品加進來')}
+  box.innerHTML=`<div class="pos-cart-head"><h2>購物車${t.qty?`<span class="pos-cart-count">${t.qty}</span>`:''}</h2><div class="pos-cart-tools">${m?'':`<button type="button" class="pos-soft pos-scan-member" data-act="pick-member">${icon('user')}<span>掃會員</span></button>`}<button type="button" class="pos-soft" data-act="held">${icon('inbox')}<span>取單</span>${S.held.length?`<b class="pos-count">${S.held.length}</b>`:''}</button></div></div>
+${m?memberCard(m,t.level):''}
+${t.lines.length?`<ol class="pos-lines">${t.lines.map((line,i)=>`<li class="pos-line"><button type="button" class="pos-line-main" data-act="edit-line" data-i="${i}" aria-label="修改 ${h(line.name)}"><span class="pos-line-name">${h(line.name)}</span><span class="pos-line-sub">${money(line.price)}${line.discount?` <em>${h(P.discountLabel(line.discount))}</em>`:''}${line.note?` ・${h(line.note)}`:''}</span>${line.bundle?`<span class="pos-line-items">${h(line.bundle.items.map(x=>x.name+'×'+x.qty*line.qty).join('、'))}</span>`:''}${line.promoLabel?`<span class="pos-line-tag is-promo">${h(line.promoLabel)}</span>`:''}${line.gift?`<span class="pos-line-tag is-gift">贈品・${h(line.giftReason||'贈品')}</span>`:''}</button><div class="pos-qty"><button type="button" data-act="qty" data-i="${i}" data-d="-1" aria-label="${h(line.name)} 減一">−</button><output aria-label="數量">${line.qty}</output><button type="button" data-act="qty" data-i="${i}" data-d="1" aria-label="${h(line.name)} 加一">＋</button></div><span class="pos-line-total">${money(line.net)}</span></li>`).join('')}</ol>`:`<div class="pos-cart-empty">${icon('cart','pos-cart-empty-icon')}<p>點選左邊的商品<br>或直接掃描條碼</p></div>`}
 <dl class="pos-totals">
+${t.lineDiscount?`<div><dt>商品原價</dt><dd>${money(t.gross)}</dd></div><div class="pos-promo-row"><dt>優惠與折扣</dt><dd>−${money(t.lineDiscount)}</dd></div>`:''}
 <div><dt>小計<small>${t.qty} 件</small></dt><dd>${money(t.subtotal)}</dd></div>
 ${t.orderDiscount?`<div><dt>整單折扣<small>${h(P.discountLabel(cart.discount))}</small></dt><dd>−${money(t.orderDiscount)}</dd></div>`:''}
+${t.levelDiscount?`<div class="pos-promo-row"><dt>${h(t.level.name)}<small>${h(P.discountLabel({type:'pct',value:t.level.pct}))}</small></dt><dd>−${money(t.levelDiscount)}</dd></div>`:''}
+${t.giftQty?`<div class="pos-tax"><dt>贈品 ${t.giftQty} 件</dt><dd>價值 ${money(t.giftValue)}</dd></div>`:''}
 ${m&&(t.maxPoints>0||t.pointsUsed>0)?`<div><dt>點數折抵<button type="button" class="pos-link" data-act="points">${t.pointsUsed?`已用 ${t.pointsUsed} 點`:`可用 ${t.maxPoints} 點`}</button></dt><dd>${t.pointsValue?'−'+money(t.pointsValue):money(0)}</dd></div>`:''}
 ${taxLabel?`<div class="pos-tax"><dt>${taxLabel}</dt><dd>${money(t.tax)}</dd></div>`:''}
 <div class="pos-total"><dt>應收</dt><dd>${money(t.total)}</dd></div>
 </dl>
-<div class="pos-cart-actions"><button type="button" data-act="clear-cart" ${t.lines.length?'':'disabled'}>清空</button><button type="button" data-act="hold" ${t.lines.length?'':'disabled'}>掛單</button><button type="button" data-act="order-discount" ${t.lines.length?'':'disabled'}>折扣</button><button type="button" class="pos-primary pos-pay" id="pos-pay" data-act="pay" ${t.lines.length?'':'disabled'}>結帳<b>${money(t.total)}</b></button></div>`;
+<div class="pos-cart-actions"><button type="button" class="pos-soft" data-act="clear-cart" ${t.lines.length?'':'disabled'}>${icon('trash')}<span>清空</span></button><button type="button" class="pos-soft" data-act="hold" ${t.lines.length?'':'disabled'}>${icon('pause')}<span>掛單</span></button><button type="button" class="pos-soft" data-act="order-discount" ${t.lines.length?'':'disabled'}>${icon('tag')}<span>折扣</span></button><button type="button" class="pos-soft pos-gift-toggle" data-act="gift-mode" aria-pressed="${ui.giftMode}">${icon('gift')}<span>贈品</span></button><button type="button" class="pos-primary pos-pay" id="pos-pay" data-act="pay" ${t.lines.length?'':'disabled'}>結帳<b>${money(t.total)}</b></button></div>`;
   const bar=$('#pos-mobile-bar');
   if(bar)bar.innerHTML=t.lines.length?`<span>${t.qty} 件・<b>${money(t.total)}</b></span><button type="button" class="pos-primary" data-act="to-cart">看購物車</button>`:'';
  }
+ // 購物車上方的會員卡：等級、點數、累計消費、離下一級還差多少。
+ function memberCard(m,level){
+  return `<div class="pos-member-card${level?' lv-'+Math.min(level.rank,3):''}"><span class="pos-member-avatar" aria-hidden="true">${h(initial(m.name))}</span><div class="pos-member-info"><b>${h(m.name)}${level?`<span class="pos-level">${h(level.name)}</span>`:''}</b><small>${m.points} 點・累計 ${money(m.total||0)}${m.code?'・'+h(m.code):''}</small>${level&&level.next?`<small class="pos-member-next">再消費 ${money(level.toNext)} 升級${h(level.next.name)}</small>`:''}${level&&level.pct?`<small class="pos-member-next">本單享 ${h(P.discountLabel({type:'pct',value:level.pct}))}</small>`:''}</div><button type="button" class="pos-icon" data-act="pick-member" aria-label="更換會員">${icon('user')}</button><button type="button" class="pos-icon" data-act="clear-member" aria-label="取消會員">✕</button></div>`;
+ }
+ function attachMember(m){
+  cart.memberId=m.id;cart.pointsUse=0;saveCart();renderCart();beep(true);
+  const level=levelOf(m);
+  toast(`會員 ${m.name}${level?'・'+level.name:''}・${m.points} 點`);
+ }
+ function addBundle(id){
+  const b=activeBundles().find(x=>x.promo.id===id);
+  if(!b){toast('這個禮包現在沒有供應','warn');renderGrid();return;}
+  const need=stockNeeds([...cart.lines,b.line]);
+  for(const item of b.line.bundle.items){
+   const p=product(item.pid);
+   if(p?.track&&need.get(p.id)>p.stock){
+    if(S.settings.blockOversell){beep(false);toast(`「${p.name}」庫存不足，禮包無法再加`,'error');return;}
+    toast(`提醒：「${p.name}」庫存只剩 ${p.stock}`,'warn');break;
+   }
+  }
+  const gift=ui.giftMode;
+  const line=cart.lines.find(l=>l.bundle&&l.bundle.id===b.line.bundle.id&&!l.discount&&!l.note&&!!l.gift===gift);
+  if(line)line.qty++;else cart.lines.push({...b.line,...(gift?{gift:true,giftReason:'門市送禮'}:{})});
+  beep(true);saveCart();renderCart();
+ }
  function addProduct(p){
-  const inCart=cart.lines.filter(l=>l.pid===p.id).reduce((sum,l)=>sum+l.qty,0);
+  const inCart=stockNeeds(cart.lines).get(p.id)||0,gift=ui.giftMode;
   if(p.track&&inCart+1>p.stock){
    if(S.settings.blockOversell){beep(false);toast(`「${p.name}」庫存不足，無法再加`,'error');return;}
    toast(`提醒：「${p.name}」庫存只剩 ${p.stock}`,'warn');
   }
-  const line=cart.lines.find(l=>l.pid===p.id&&!l.discount&&!l.note&&l.price===p.price);
-  if(line)line.qty++;else cart.lines.push({pid:p.id,name:p.name,sku:p.sku||'',cat:catName(p.categoryId),price:p.price,cost:p.cost||0,qty:1,discount:null,note:''});
+  const line=cart.lines.find(l=>l.pid===p.id&&!l.discount&&!l.note&&l.price===p.price&&!l.bundle&&!!l.gift===gift);
+  if(line)line.qty++;else cart.lines.push({pid:p.id,name:p.name,sku:p.sku||'',cat:catName(p.categoryId),price:p.price,cost:p.cost||0,qty:1,discount:null,note:'',...(gift?{gift:true,giftReason:'門市送禮'}:{})});
   beep(true);saveCart();renderCart();
+  // 買一送一：提醒收銀員現在送了幾件，單數時還可以再送一件。
+  const deal=!gift&&totals().bogo.find(b=>b.pid===p.id);
+  if(deal)toast(deal.odd?`「${p.name}」買一送一：再拿 1 件就免費`:`「${p.name}」買一送一：已送 ${deal.free} 件`);
  }
  function resetCart(){cart={lines:[],discount:null,pointsUse:0,memberId:''};saveCart();}
  // 折扣設定共用的表單內容：快速折數、自訂折數或折抵金額。
@@ -253,10 +334,18 @@ ${taxLabel?`<div class="pos-tax"><dt>${taxLabel}</dt><dd>${money(t.tax)}</dd></d
  }
 
  // ---------- 結帳 ----------
- function openPay(){
+ function openPay(skipReminder){
   const t=totals();if(!t.lines.length)return;
+  if(!skipReminder&&t.bogo.length)return openPromoReminder();
   pay={rows:[{id:'cash',amount:''}],active:0,print:!!S.settings.autoPrint};
   renderPay();
+ }
+ // 結帳前的優惠提醒：列出這張單的買一送一，單數時可以一鍵再加一件免費的。
+ function openPromoReminder(){
+  const t=totals();
+  if(!t.bogo.length)return openPay(true);
+  openDialog({title:'優惠提醒',body:`<p class="pos-confirm">這張單有買一送一，請和客人確認：</p><div class="pos-reminders">${t.bogo.map(b=>`<div class="pos-reminder${b.odd?' is-odd':''}"><span class="pos-reminder-icon" aria-hidden="true">${icon('gift')}</span><div class="pos-reminder-text"><b>${h(b.name)}</b><span>${h(b.promoName)}・目前 ${b.qty} 件${b.free?`，已送 ${b.free} 件`:''}</span>${b.odd?'<em>再拿 1 件就能多送 1 件</em>':''}</div>${b.odd?`<button type="button" class="pos-primary" data-act="bogo-add" data-pid="${h(b.pid)}">${icon('plus')}<span>加 1 件免費</span></button>`:''}</div>`).join('')}</div>`,
+   footer:'<button type="button" data-act="close-dialog">回購物車</button><button type="button" class="pos-primary" data-act="pay-continue" autofocus>繼續結帳</button>'});
  }
  function payRows(){return pay.rows.map(row=>{const m=methodById(row.id);return {id:m.id,name:m.name,cash:!!m.cash,amount:row.amount===''?0:P.parseAmount(row.amount)};});}
  function paySettle(){
@@ -271,7 +360,7 @@ ${taxLabel?`<div class="pos-tax"><dt>${taxLabel}</dt><dd>${money(t.tax)}</dd></d
   const cashRow=pay.rows.findIndex(r=>methodById(r.id).cash);
   openDialog({title:'結帳',form:'pay',size:'wide',body:`<div class="pos-pay-layout"><div class="pos-pay-main">
 <p class="pos-pay-total"><span>應收</span><b>${money(t.total)}</b></p>
-<div class="pos-pay-rows">${pay.rows.map((row,i)=>`<div class="pos-pay-row${pay.active===i?' is-active':''}"><select name="method-${i}" data-change="pay-method" data-i="${i}" aria-label="付款方式 ${i+1}">${S.settings.methods.map(m=>`<option value="${h(m.id)}"${m.id===row.id?' selected':''}>${h(m.name)}</option>`).join('')}</select><input name="amount-${i}" data-input="pay-amount" data-i="${i}" inputmode="numeric" autocomplete="off" value="${h(row.amount)}" placeholder="${pay.rows.length===1?t.total:'金額'}" aria-label="收款金額 ${i+1}"${i===pay.active?' autofocus':''}>${pay.rows.length>1?`<button type="button" class="pos-icon" data-act="pay-remove" data-i="${i}" aria-label="移除這筆付款">✕</button>`:''}</div>`).join('')}</div>
+<div class="pos-pay-rows">${pay.rows.map((row,i)=>`<div class="pos-pay-row${pay.active===i?' is-active':''}"><div class="pos-method-pick" role="radiogroup" aria-label="付款方式${pay.rows.length>1?' '+(i+1):''}">${S.settings.methods.map(m=>`<button type="button" class="pos-method" role="radio" aria-checked="${m.id===row.id}" data-act="pay-method" data-i="${i}" data-id="${h(m.id)}">${methodIcon(m)}<span>${h(m.name)}</span></button>`).join('')}</div><input name="amount-${i}" data-input="pay-amount" data-i="${i}" inputmode="numeric" autocomplete="off" value="${h(row.amount)}" placeholder="${pay.rows.length===1?t.total:'金額'}" aria-label="收款金額 ${i+1}"${i===pay.active?' autofocus':''}>${pay.rows.length>1?`<button type="button" class="pos-icon" data-act="pay-remove" data-i="${i}" aria-label="移除這筆付款">✕</button>`:''}</div>`).join('')}</div>
 <button type="button" class="pos-link" data-act="pay-add">＋ 分開付款（再加一種付款方式）</button>
 ${cashRow>=0?`<div class="pos-chips pos-quick" aria-label="現金快速鍵">${P.cashSuggestions(t.total).map((amount,i)=>`<button type="button" class="pos-chip" data-act="pay-quick" data-amount="${amount}">${i===0&&amount===t.total?'剛好 ':''}${money(amount)}</button>`).join('')}</div>`:''}
 <div class="pos-pay-status" id="pos-pay-status" role="status"></div>
@@ -284,6 +373,7 @@ ${cashRow>=0?`<div class="pos-chips pos-quick" aria-label="現金快速鍵">${P.
  }
  function updatePayStatus(){
   const box=$('#pos-pay-status');if(!box||!pay)return;
+  if(totals().total===0){box.dataset.state='ok';box.innerHTML=`<span>0 元銷貨，不用收款</span><b>${money(0)}</b>`;return;}
   const s=paySettle(),cash=payRows().some(r=>r.cash);
   box.dataset.state=s.ok?'ok':'due';
   box.innerHTML=s.ok?(cash?`<span>找零</span><b>${money(s.change)}</b>`:`<span>收款金額</span><b>${money(s.paid)}</b>`):`<span>${h(s.error)}</span>`;
@@ -295,21 +385,24 @@ ${cashRow>=0?`<div class="pos-chips pos-quick" aria-label="現金快速鍵">${P.
   if(taxId&&!P.validTaxId(taxId)){form.elements.taxId.focus();return formError(form,'統一編號格式不正確，請再確認 8 碼數字');}
   if(carrier&&!P.validCarrier(carrier)){form.elements.carrier.focus();return formError(form,'載具格式不正確，手機條碼是「/」加 7 碼');}
   if(S.settings.blockOversell){
-   for(const line of t.lines){const p=product(line.pid);if(p?.track){const need=t.lines.filter(l=>l.pid===p.id).reduce((sum,l)=>sum+l.qty,0);if(need>p.stock)return formError(form,`「${p.name}」庫存只剩 ${p.stock}，請調整數量`);}}
+   for(const [pid,need] of stockNeeds(t.lines)){const p=product(pid);if(p?.track&&need>p.stock)return formError(form,`「${p.name}」庫存只剩 ${p.stock}，請調整數量`);}
   }
   const time=Date.now(),next=P.nextOrderId(S.seq,time),m=member(),shift=currentShift();
   let order;
-  try{order=P.buildOrder({id:next.id,time,cart,settings:S.settings,member:m,payments:s.payments,cashier:shift?.cashier||S.settings.cashier,shiftId:shift?.id||'',buyerTaxId:taxId,carrier,note:form.elements.note.value.trim()});}
+  try{order=P.buildOrder({id:next.id,time,cart,settings:S.settings,member:m,payments:s.payments,cashier:shift?.cashier||S.settings.cashier,shiftId:shift?.id||'',buyerTaxId:taxId,carrier,note:form.elements.note.value.trim(),promos:S.promos});}
   catch(error){return formError(form,error.message);}
   const ops=[['orders','put',order]];
   S.seq=next.seq;S.orders.push(order);
-  for(const line of order.lines){const p=product(line.pid);if(p?.track){p.stock-=line.qty;addMove(ops,p,'sale',-line.qty,'',order.id);}}
+  for(const line of order.lines){
+   const parts=line.bundle?line.bundle.items.map(x=>({pid:x.pid,qty:x.qty*line.qty,note:'禮包：'+line.name})):[{pid:line.pid,qty:line.qty,note:line.gift?'贈品：'+line.giftReason:''}];
+   for(const part of parts){const p=product(part.pid);if(p?.track){p.stock-=part.qty;addMove(ops,p,line.gift?'gift':'sale',-part.qty,part.note,order.id);}}
+  }
   if(m){m.points=Math.max(0,m.points-order.pointsUsed+order.pointsEarned);m.total=(m.total||0)+order.total;m.visits=(m.visits||0)+1;m.lastAt=time;}
   ops.push(...kvOps('seq','products','members'));
   commit(ops);
   const wantPrint=form.elements.print.checked;
   resetCart();pay=null;
-  openDialog({title:'結帳完成',body:`<div class="pos-done"><p class="pos-done-label">${order.change?'找零':'已收款'}</p><p class="pos-done-amount">${money(order.change||order.total)}</p><p class="pos-done-meta">單號 ${h(order.id)}・${order.payments.map(p=>h(p.name)+' '+money(p.amount)).join('、')}${order.pointsEarned?`・獲得 ${order.pointsEarned} 點`:''}</p></div>`,
+  openDialog({title:'結帳完成',body:`<div class="pos-done"><p class="pos-done-label">${order.total===0?'0 元銷貨完成':order.change?'找零':'已收款'}</p><p class="pos-done-amount">${money(order.change||order.total)}</p><p class="pos-done-meta">單號 ${h(order.id)}・${order.payments.map(p=>h(p.name)+' '+money(p.amount)).join('、')}${order.pointsEarned?`・獲得 ${order.pointsEarned} 點`:''}</p></div>`,
    footer:`<button type="button" data-act="print-order" data-id="${h(order.id)}">列印明細</button><button type="button" class="pos-primary" data-act="close-dialog" autofocus>下一位顧客</button>`});
   beep(true);render();
   if(wantPrint)printOrder(order);
@@ -333,9 +426,9 @@ ${cashRow>=0?`<div class="pos-chips pos-quick" aria-label="現金快速鍵">${P.
  function receiptHtml(order){
   const refunded=P.refundedTotal(order);
   return `<article class="pos-receipt">${receiptHead('交易明細')}
-${receiptRow('單號',h(order.id))}${receiptRow('時間',P.formatTime(order.t))}${order.cashier?receiptRow('收銀員',h(order.cashier)):''}${order.memberName?receiptRow('會員',h(order.memberName)):''}
-<hr>${order.lines.map(line=>`<p class="r-name">${h(line.name)}${line.note?`（${h(line.note)}）`:''}</p>${receiptRow(`${money(line.price)} × ${line.qty}${line.discountLabel?' '+h(line.discountLabel):''}`,money(line.net))}`).join('')}<hr>
-${receiptRow('小計',money(order.subtotal))}${order.orderDiscount?receiptRow('整單折扣 '+h(order.orderDiscountLabel),'−'+money(order.orderDiscount)):''}${order.pointsValue?receiptRow(`點數折抵 ${order.pointsUsed} 點`,'−'+money(order.pointsValue)):''}${order.taxMode==='added'?receiptRow(`營業稅 ${order.taxRate}%`,money(order.tax)):''}
+${receiptRow('單號',h(order.id))}${receiptRow('時間',P.formatTime(order.t))}${order.cashier?receiptRow('收銀員',h(order.cashier)):''}${order.memberName?receiptRow('會員',h(order.memberName)+(order.memberLevel?'（'+h(order.memberLevel)+'）':'')):''}
+<hr>${order.lines.map(line=>`<p class="r-name">${h(line.name)}${line.note?`（${h(line.note)}）`:''}</p>${line.bundle?`<p class="r-small">${h(line.bundle.items.map(x=>x.name+'×'+x.qty*line.qty).join('、'))}</p>`:''}${line.gift?receiptRow(`${money(line.price)} × ${line.qty}`,'贈品 '+money(0))+`<p class="r-small">${h(line.giftReason||'贈品')}</p>`:receiptRow(`${money(line.price)} × ${line.qty}`,money(line.price*line.qty))+(line.promoOff?receiptRow(h(line.promoLabel||'優惠'),'−'+money(line.promoOff)):'')+(line.discount?receiptRow(h(line.discountLabel||'折扣'),'−'+money(line.discount)):'')}`).join('')}<hr>
+${receiptRow('小計',money(order.subtotal))}${order.orderDiscount?receiptRow('整單折扣 '+h(order.orderDiscountLabel),'−'+money(order.orderDiscount)):''}${order.levelDiscount?receiptRow(h(order.memberLevel)+' '+h(P.discountLabel({type:'pct',value:order.levelPct})),'−'+money(order.levelDiscount)):''}${order.pointsValue?receiptRow(`點數折抵 ${order.pointsUsed} 點`,'−'+money(order.pointsValue)):''}${order.taxMode==='added'?receiptRow(`營業稅 ${order.taxRate}%`,money(order.tax)):''}
 ${receiptRow('總計',money(order.total),'r-total')}${order.taxMode==='included'?receiptRow(`內含營業稅 ${order.taxRate}%`,money(order.tax)):''}
 <hr>${order.payments.map(p=>receiptRow(h(p.name),money(p.amount))).join('')}${order.change?receiptRow('找零',money(order.change)):''}
 ${refunded?'<hr>'+order.refunds.map(r=>receiptRow('退款 '+P.formatTime(r.t).slice(5),'−'+money(r.amount))).join('')+receiptRow('退款後金額',money(order.total-refunded),'r-total'):''}
@@ -371,9 +464,9 @@ ${s.countedCash==null?'':receiptRow('實點現金',money(s.countedCash))+receipt
  function openOrder(id){
   const o=S.orders.find(order=>order.id===id);if(!o)return;
   const refunded=P.refundedTotal(o);
-  openDialog({title:'訂單 '+o.id,size:'wide',body:`<div class="pos-meta"><span>${P.formatTime(o.t)}</span>${o.cashier?`<span>收銀員 ${h(o.cashier)}</span>`:''}${o.memberName?`<span>會員 ${h(o.memberName)}</span>`:''}${o.buyerTaxId?`<span>統編 ${h(o.buyerTaxId)}</span>`:''}${o.carrier?`<span>載具 ${h(o.carrier)}</span>`:''}${statusTag(o)}</div>${o.note?`<p class="pos-note">備註：${h(o.note)}</p>`:''}
-<div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>品名</th><th class="num">單價</th><th class="num">數量</th><th class="num">金額</th><th class="num">已退</th></tr></thead><tbody>${o.lines.map(l=>`<tr><td>${h(l.name)}${l.discountLabel?` <em class="pos-em">${h(l.discountLabel)}</em>`:''}${l.note?`<small>${h(l.note)}</small>`:''}</td><td class="num">${money(l.price)}</td><td class="num">${l.qty}</td><td class="num">${money(l.net)}</td><td class="num">${l.returned||'—'}</td></tr>`).join('')}</tbody></table></div>
-<dl class="pos-totals pos-totals-plain"><div><dt>小計</dt><dd>${money(o.subtotal)}</dd></div>${o.orderDiscount?`<div><dt>整單折扣 ${h(o.orderDiscountLabel)}</dt><dd>−${money(o.orderDiscount)}</dd></div>`:''}${o.pointsValue?`<div><dt>點數折抵 ${o.pointsUsed} 點</dt><dd>−${money(o.pointsValue)}</dd></div>`:''}${o.taxMode!=='none'?`<div><dt>${o.taxMode==='included'?'內含':''}營業稅 ${o.taxRate}%</dt><dd>${money(o.tax)}</dd></div>`:''}<div class="pos-total"><dt>總計</dt><dd>${money(o.total)}</dd></div>${o.payments.map(p=>`<div><dt>${h(p.name)}</dt><dd>${money(p.amount)}</dd></div>`).join('')}${o.change?`<div><dt>找零</dt><dd>${money(o.change)}</dd></div>`:''}${o.refunds.map(r=>`<div class="pos-refund-row"><dt>退款<small>${P.formatTime(r.t).slice(5)}・${h(r.method.name)}${r.reason?'・'+h(r.reason):''}</small></dt><dd>−${money(r.amount)}</dd></div>`).join('')}${refunded?`<div class="pos-total"><dt>退款後金額</dt><dd>${money(o.total-refunded)}</dd></div>`:''}</dl>`,
+  openDialog({title:'訂單 '+o.id,size:'wide',body:`<div class="pos-meta"><span>${P.formatTime(o.t)}</span>${o.cashier?`<span>收銀員 ${h(o.cashier)}</span>`:''}${o.memberName?`<span>會員 ${h(o.memberName)}${o.memberLevel?'（'+h(o.memberLevel)+'）':''}</span>`:''}${o.buyerTaxId?`<span>統編 ${h(o.buyerTaxId)}</span>`:''}${o.carrier?`<span>載具 ${h(o.carrier)}</span>`:''}${statusTag(o)}</div>${o.note?`<p class="pos-note">備註：${h(o.note)}</p>`:''}
+<div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>品名</th><th class="num">單價</th><th class="num">數量</th><th class="num">金額</th><th class="num">已退</th></tr></thead><tbody>${o.lines.map(l=>`<tr><td>${h(l.name)}${l.discountLabel?` <em class="pos-em">${h(l.discountLabel)}</em>`:''}${l.promoLabel?` <span class="pos-line-tag is-promo">${h(l.promoLabel)}</span>`:''}${l.gift?` <span class="pos-line-tag is-gift">贈品・${h(l.giftReason||'贈品')}</span>`:''}${l.bundle?`<small>${h(l.bundle.items.map(x=>x.name+'×'+x.qty*l.qty).join('、'))}</small>`:''}${l.note?`<small>${h(l.note)}</small>`:''}</td><td class="num">${money(l.price)}</td><td class="num">${l.qty}</td><td class="num">${money(l.net)}</td><td class="num">${l.returned||'—'}</td></tr>`).join('')}</tbody></table></div>
+<dl class="pos-totals pos-totals-plain"><div><dt>小計</dt><dd>${money(o.subtotal)}</dd></div>${o.orderDiscount?`<div><dt>整單折扣 ${h(o.orderDiscountLabel)}</dt><dd>−${money(o.orderDiscount)}</dd></div>`:''}${o.levelDiscount?`<div><dt>${h(o.memberLevel)} ${h(P.discountLabel({type:'pct',value:o.levelPct}))}</dt><dd>−${money(o.levelDiscount)}</dd></div>`:''}${o.pointsValue?`<div><dt>點數折抵 ${o.pointsUsed} 點</dt><dd>−${money(o.pointsValue)}</dd></div>`:''}${o.taxMode!=='none'?`<div><dt>${o.taxMode==='included'?'內含':''}營業稅 ${o.taxRate}%</dt><dd>${money(o.tax)}</dd></div>`:''}<div class="pos-total"><dt>總計</dt><dd>${money(o.total)}</dd></div>${o.payments.map(p=>`<div><dt>${h(p.name)}</dt><dd>${money(p.amount)}</dd></div>`).join('')}${o.change?`<div><dt>找零</dt><dd>${money(o.change)}</dd></div>`:''}${o.refunds.map(r=>`<div class="pos-refund-row"><dt>退款<small>${P.formatTime(r.t).slice(5)}・${h(r.method.name)}${r.reason?'・'+h(r.reason):''}</small></dt><dd>−${money(r.amount)}</dd></div>`).join('')}${refunded?`<div class="pos-total"><dt>退款後金額</dt><dd>${money(o.total-refunded)}</dd></div>`:''}</dl>`,
    footer:`<button type="button" data-act="print-order" data-id="${h(o.id)}">列印明細</button>${o.status!=='refunded'?`<button type="button" class="pos-danger" data-act="refund" data-id="${h(o.id)}">退貨／退款</button>`:''}<button type="button" class="pos-primary" data-act="close-dialog">關閉</button>`});
  }
  function openRefund(id){
@@ -396,7 +489,10 @@ ${s.countedCash==null?'':receiptRow('實點現金',money(s.countedCash))+receipt
   const result=P.applyRefund(o,quote,{time:Date.now(),method:{id:method.id,name:method.name,cash:!!method.cash},cashier:shift?.cashier||S.settings.cashier,shiftId:shift?.id||'',restock,reason:form.elements.reason.value.trim()});
   const ops=[['orders','put',result.order]];
   S.orders[S.orders.indexOf(o)]=result.order;
-  if(restock)for(const item of quote.lines){const p=product(item.pid);if(p?.track){p.stock+=item.qty;addMove(ops,p,'refund',item.qty,'',o.id);}}
+  if(restock)for(const item of quote.lines){
+   const line=o.lines[item.i],parts=line?.bundle?line.bundle.items.map(x=>({pid:x.pid,qty:x.qty*item.qty})):[{pid:item.pid,qty:item.qty}];
+   for(const part of parts){const p=product(part.pid);if(p?.track){p.stock+=part.qty;addMove(ops,p,'refund',part.qty,line?.bundle?'禮包：'+line.name:'',o.id);}}
+  }
   const m=S.members.find(x=>x.id===o.memberId);
   if(m){m.points=Math.max(0,m.points+result.pointsDelta);m.total=Math.max(0,(m.total||0)+result.spendDelta);}
   ops.push(...kvOps('products','members'));commit(ops);
@@ -487,7 +583,7 @@ ${field('品名','<input name="name" maxlength="60" required autocomplete="off" 
  }
 
  // ---------- 庫存 ----------
- const MOVE_LABEL={sale:'銷售',refund:'退貨',in:'進貨',adjust:'盤點調整'};
+ const MOVE_LABEL={sale:'銷售',gift:'贈品',refund:'退貨',in:'進貨',adjust:'盤點調整'};
  function renderStock(){
   const tracked=S.products.filter(p=>p.track),low=tracked.filter(p=>p.stock>0&&P.isLowStock(p)).length,out=tracked.filter(p=>p.stock<=0).length;
   const value=tracked.reduce((sum,p)=>sum+Math.max(0,p.stock)*(p.cost||0),0);
@@ -525,33 +621,39 @@ ${field('備註（選填）','<input name="note" maxlength="40" autocomplete="of
  }
 
  // ---------- 會員 ----------
- const matchMember=(m,q)=>{const key=q.normalize('NFKC').trim().toLowerCase();return !key||m.name.toLowerCase().includes(key)||String(m.phone||'').includes(key);};
+ const matchMember=(m,q)=>{const key=q.normalize('NFKC').trim().toLowerCase();return !key||m.name.toLowerCase().includes(key)||String(m.phone||'').includes(key)||String(m.code||'').toLowerCase().includes(key);};
  function renderMembers(){
   view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>會員</h2><div class="pos-page-tools"><button type="button" class="pos-primary" data-act="member-new">＋ 新增會員</button><button type="button" data-act="export-members">匯出 CSV</button></div></div>
-<div class="pos-filters"><input type="search" data-input="members-q" autocomplete="off" placeholder="搜尋姓名或電話" aria-label="搜尋會員" value="${h(ui.members.q)}"></div><div id="pos-list"></div>
-<p class="pos-hint">集點規則：${S.settings.earnPer>0?`每消費 ${money(S.settings.earnPer)} 得 1 點，1 點可折 ${money(S.settings.pointValue)}`:'目前沒有開啟集點'}。可在「設定」調整。</p></div>`;
+<div class="pos-filters"><input type="search" data-input="members-q" autocomplete="off" placeholder="搜尋姓名、電話或卡號" aria-label="搜尋會員" value="${h(ui.members.q)}"></div><div id="pos-list"></div>
+<p class="pos-hint">集點規則：${S.settings.earnPer>0?`每消費 ${money(S.settings.earnPer)} 得 1 點，1 點可折 ${money(S.settings.pointValue)}`:'目前沒有開啟集點'}。會員等級：${P.cleanLevels(S.settings.levels).map(l=>`${h(l.name)}（累計 ${money(l.min)} 起${l.pct?'，'+h(P.discountLabel({type:'pct',value:l.pct})):''}）`).join('、')||'沒有設定'}。可在「設定」調整。</p></div>`;
   renderMemberList();
  }
  function renderMemberList(){
   const box=$('#pos-list');if(!box)return;
   const list=S.members.filter(m=>matchMember(m,ui.members.q));
-  box.innerHTML=list.length?`<div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>姓名</th><th>電話</th><th class="num">點數</th><th class="num">累計消費</th><th class="num">來店</th><th>操作</th></tr></thead><tbody>${list.map(m=>`<tr><td><button type="button" class="pos-link" data-act="member-edit" data-id="${h(m.id)}">${h(m.name)}</button></td><td class="mono">${h(m.phone)||'—'}</td><td class="num">${m.points}</td><td class="num">${money(m.total||0)}</td><td class="num">${m.visits||0}</td><td class="pos-actions"><button type="button" data-act="member-history" data-id="${h(m.id)}">消費紀錄</button></td></tr>`).join('')}</tbody></table></div>`:empty(S.members.length?'找不到符合的會員':'還沒有會員');
+  box.innerHTML=list.length?`<div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>姓名</th><th>等級</th><th>卡號</th><th>電話</th><th class="num">點數</th><th class="num">累計消費</th><th class="num">來店</th><th>操作</th></tr></thead><tbody>${list.map(m=>`<tr><td><button type="button" class="pos-link" data-act="member-edit" data-id="${h(m.id)}">${h(m.name)}</button></td><td>${(l=>l?`<span class="pos-level">${h(l.name)}</span>`:'—')(levelOf(m))}</td><td class="mono">${h(m.code)||'—'}</td><td class="mono">${h(m.phone)||'—'}</td><td class="num">${m.points}</td><td class="num">${money(m.total||0)}</td><td class="num">${m.visits||0}</td><td class="pos-actions"><button type="button" data-act="member-history" data-id="${h(m.id)}">消費紀錄</button></td></tr>`).join('')}</tbody></table></div>`:empty(S.members.length?'找不到符合的會員':'還沒有會員');
  }
  function openMember(id,fromCart=false){
   const m=id?S.members.find(x=>x.id===id):null;
   openDialog({title:m?'編輯會員':'新增會員',form:'member',body:`<input type="hidden" name="id" value="${h(m?.id||'')}"><input type="hidden" name="pick" value="${fromCart?'1':''}">
 <div class="pos-row">${field('姓名','<input name="name" maxlength="30" required autocomplete="off" value="'+h(m?.name||'')+'"'+(m?'':' autofocus')+'>')}${field('電話','<input name="phone" inputmode="tel" maxlength="20" autocomplete="off" value="'+h(m?.phone||'')+'">')}</div>
+${field('會員卡號','<input name="code" maxlength="20" autocomplete="off" autocapitalize="characters" value="'+h(m?(m.code||''):nextMemberCode())+'">','用掃描槍掃這個號碼就能帶出會員；可以改成實體會員卡上的號碼')}
 <div class="pos-row">${field('點數','<input name="points" inputmode="numeric" autocomplete="off" value="'+(m?m.points:0)+'">','可直接修改來補點或扣點')}${field('備註','<input name="note" maxlength="60" autocomplete="off" value="'+h(m?.note||'')+'">')}</div>${errorBox}`,
    footer:`${m?`<button type="button" class="pos-danger pos-left" data-act="member-delete" data-id="${h(m.id)}">刪除</button>`:''}<button type="button" data-act="close-dialog">取消</button><button type="submit" class="pos-primary">儲存</button>`});
  }
+ function nextMemberCode(){
+  for(let n=S.members.length+1;;n++){const code='M'+String(n).padStart(4,'0');if(!S.members.some(m=>P.normalizeCode(m.code)===code))return code;}
+ }
  function saveMember(form){
-  const e=form.elements,id=e.id.value,name=e.name.value.trim(),phone=e.phone.value.normalize('NFKC').replace(/[\s-]/g,''),points=P.parseAmount(e.points.value);
+  const e=form.elements,id=e.id.value,name=e.name.value.trim(),phone=e.phone.value.normalize('NFKC').replace(/[\s-]/g,''),points=P.parseAmount(e.points.value),code=P.normalizeCode(e.code.value);
   if(!name)return formError(form,'請填姓名');
   if(Number.isNaN(points))return formError(form,'點數請填 0 以上的整數');
   if(phone&&S.members.some(m=>m.id!==id&&m.phone===phone))return formError(form,'這個電話已經有會員在用');
+  if(code&&S.members.some(m=>m.id!==id&&P.normalizeCode(m.code)===code))return formError(form,'這個會員卡號已經有人在用');
+  if(code&&P.findByCode(S.products,code))return formError(form,'這個號碼和商品條碼重複，請換一個');
   let m=S.members.find(x=>x.id===id);
-  if(m)Object.assign(m,{name,phone,points,note:e.note.value.trim()});
-  else{m={id:uid(),name,phone,points,total:0,visits:0,note:e.note.value.trim(),createdAt:Date.now()};S.members.push(m);}
+  if(m)Object.assign(m,{name,phone,code,points,note:e.note.value.trim()});
+  else{m={id:uid(),name,phone,code,points,total:0,visits:0,note:e.note.value.trim(),createdAt:Date.now()};S.members.push(m);}
   save('members');
   if(e.pick.value){cart.memberId=m.id;cart.pointsUse=0;saveCart();}
   closeDialog();toast('會員已儲存');render();
@@ -560,16 +662,87 @@ ${field('備註（選填）','<input name="note" maxlength="40" autocomplete="of
  function openMemberHistory(id){
   const m=S.members.find(x=>x.id===id);if(!m)return;
   const list=S.orders.filter(o=>o.memberId===id).reverse();
-  openDialog({title:m.name+' 的消費紀錄',size:'wide',body:`<div class="pos-meta"><span>點數 ${m.points}</span><span>累計消費 ${money(m.total||0)}</span><span>來店 ${m.visits||0} 次</span></div>${list.length?`<div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>單號</th><th>時間</th><th class="num">金額</th><th class="num">得點</th><th>狀態</th></tr></thead><tbody>${list.slice(0,100).map(o=>`<tr><td><button type="button" class="pos-link" data-act="order" data-id="${h(o.id)}">${h(o.id)}</button></td><td>${P.formatTime(o.t)}</td><td class="num">${money(P.orderNet(o))}</td><td class="num">${o.pointsEarnedNow??o.pointsEarned}</td><td>${statusTag(o)}</td></tr>`).join('')}</tbody></table></div>`:empty('還沒有消費紀錄')}`,footer:'<button type="button" class="pos-primary" data-act="close-dialog">關閉</button>'});
+  openDialog({title:m.name+' 的消費紀錄',size:'wide',body:`<div class="pos-meta">${(l=>l?`<span class="pos-level">${h(l.name)}</span>`:'')(levelOf(m))}${m.code?`<span>卡號 ${h(m.code)}</span>`:''}<span>點數 ${m.points}</span><span>累計消費 ${money(m.total||0)}</span><span>來店 ${m.visits||0} 次</span></div>${list.length?`<div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>單號</th><th>時間</th><th class="num">金額</th><th class="num">得點</th><th>狀態</th></tr></thead><tbody>${list.slice(0,100).map(o=>`<tr><td><button type="button" class="pos-link" data-act="order" data-id="${h(o.id)}">${h(o.id)}</button></td><td>${P.formatTime(o.t)}</td><td class="num">${money(P.orderNet(o))}</td><td class="num">${o.pointsEarnedNow??o.pointsEarned}</td><td>${statusTag(o)}</td></tr>`).join('')}</tbody></table></div>`:empty('還沒有消費紀錄')}`,footer:'<button type="button" class="pos-primary" data-act="close-dialog">關閉</button>'});
  }
  function openPickMember(){
-  openDialog({title:'選擇會員',body:`<input type="search" id="pos-pick-q" data-input="pick-q" autocomplete="off" placeholder="輸入姓名或電話" aria-label="搜尋會員" autofocus><div id="pos-pick-list" class="pos-pick-list"></div>`,footer:'<button type="button" data-act="close-dialog">取消</button><button type="button" class="pos-primary" data-act="member-new-pick">＋ 新增會員</button>'});
+  openDialog({title:'會員',body:`<label class="pos-search-field pos-member-scan">${icon('search')}<input type="search" id="pos-pick-q" data-input="pick-q" enterkeyhint="search" autocomplete="off" autocapitalize="characters" placeholder="掃描會員卡，或輸入卡號、電話、姓名" aria-label="掃描或搜尋會員" autofocus></label><div id="pos-pick-list" class="pos-pick-list"></div>`,footer:'<button type="button" data-act="close-dialog">取消</button><button type="button" class="pos-primary" data-act="member-new-pick">＋ 新增會員</button>'});
   renderPickList('');
  }
  function renderPickList(q){
   const box=$('#pos-pick-list');if(!box)return;
   const list=S.members.filter(m=>matchMember(m,q)).slice(0,30);
-  box.innerHTML=list.length?list.map(m=>`<button type="button" class="pos-pick" data-act="member-pick" data-id="${h(m.id)}"><b>${h(m.name)}</b><span>${h(m.phone)||'沒有電話'}・${m.points} 點</span></button>`).join(''):empty('找不到會員，可以按右下角新增');
+  box.innerHTML=list.length?list.map(m=>{const level=levelOf(m);return `<button type="button" class="pos-pick pos-pick-member" data-act="member-pick" data-id="${h(m.id)}"><span class="pos-member-avatar" aria-hidden="true">${h(initial(m.name))}</span><span class="pos-pick-text"><b>${h(m.name)}${level?`<span class="pos-level">${h(level.name)}</span>`:''}</b><span>${m.code?h(m.code)+'・':''}${h(m.phone)||'沒有電話'}・${m.points} 點</span></span></button>`;}).join(''):empty('找不到會員，可以按右下角新增');
+ }
+
+ // ---------- 優惠活動 ----------
+ const PROMO_TYPES=[['bogo','買一送一'],['sale','限時折扣'],['bundle','禮包組合']];
+ const promoTypeName=type=>(PROMO_TYPES.find(t=>t[0]===type)||['',''])[1];
+ const foldOf=pct=>{const keep=100-pct;return keep%10===0?String(keep/10):String(keep);};
+ function promoSummary(p){
+  const name=id=>product(id)?.name||'（已刪除的商品）';
+  const what=p.type==='bundle'?(p.items||[]).map(i=>name(i.pid)+' ×'+i.qty).join('、')+'・禮包價 '+money(p.price)
+   :(p.productIds||[]).map(name).join('、')+(p.type==='sale'?'・'+(p.mode==='price'?'特價 '+money(p.value):foldOf(Number(p.value)||0)+' 折'):'');
+  const dates=p.from||p.to?`${p.from?p.from.replace('T',' '):'即日起'} ～ ${p.to?p.to.replace('T',' '):'不限'}`:'不限日期';
+  return {what,when:dates+(p.dayFrom&&p.dayTo?`・每天 ${p.dayFrom}–${p.dayTo}`:'')};
+ }
+ function renderPromos(){
+  const time=Date.now();
+  view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>優惠活動</h2><div class="pos-page-tools">${PROMO_TYPES.map(([type,label],i)=>`<button type="button"${i===0?' class="pos-primary"':''} data-act="promo-new" data-type="${type}">＋ ${label}</button>`).join('')}</div></div>
+<p class="pos-hint">買一送一：同一商品每 2 件送 1 件，結帳時會跳出提醒。限時折扣：在設定的日期與時段內自動打折或特價。禮包組合：幾樣商品組成一個禮包，用禮包價賣，結帳時從每樣商品扣庫存。同一商品同時有買一送一和限時折扣時，只套用買一送一。</p>
+${S.promos.length?`<div class="pos-promo-list">${S.promos.map(p=>{const state=P.promoState(p,time),s=promoSummary(p);return `<article class="pos-promo pos-promo-${h(p.type)}"><div class="pos-promo-head"><span class="pos-promo-type">${icon(p.type==='bundle'?'gift':p.type==='bogo'?'plus':'percent')}${h(promoTypeName(p.type))}</span><span class="pos-tag pos-promo-state is-${state}">${h(P.PROMO_STATE[state])}</span></div><h3>${h(p.name||'未命名的活動')}</h3><p class="pos-promo-what">${h(s.what)}</p><p class="pos-promo-when">${h(s.when)}</p><div class="pos-promo-actions"><button type="button" class="pos-soft" data-act="promo-edit" data-id="${h(p.id)}">編輯</button><button type="button" class="pos-soft" data-act="promo-toggle" data-id="${h(p.id)}">${p.active===false?'啟用':'停用'}</button></div></article>`;}).join('')}</div>`:empty('還沒有優惠活動，按右上角新增')}</div>`;
+ }
+ function openPromo(id,type){
+  const p=id?S.promos.find(x=>x.id===id):{id:'',type,name:'',active:true,from:'',to:'',dayFrom:'',dayTo:'',productIds:[],items:[],mode:'pct',value:10,price:''};
+  if(!p)return;
+  ui.promoQ='';
+  const picked=new Set(p.productIds||[]),qty=new Map((p.items||[]).map(i=>[i.pid,i.qty]));
+  const rows=S.products.map(x=>p.type==='bundle'
+   ?`<div class="pos-pick-row" data-name="${h(x.name.toLowerCase())}"><span class="pos-pick-row-name"><b>${h(x.name)}</b><small>${money(x.price)}</small></span><div class="pos-qty"><button type="button" data-act="promo-qty" data-d="-1" aria-label="${h(x.name)} 減一">−</button><input class="pos-promo-qty" name="qty-${h(x.id)}" data-price="${x.price}" data-input="promo-bundle" inputmode="numeric" value="${qty.get(x.id)||0}" aria-label="${h(x.name)} 數量"><button type="button" data-act="promo-qty" data-d="1" aria-label="${h(x.name)} 加一">＋</button></div></div>`
+   :`<label class="pos-pick-row" data-name="${h(x.name.toLowerCase())}"><span class="pos-pick-row-name"><b>${h(x.name)}</b><small>${money(x.price)}・${h(catName(x.categoryId)||'未分類')}</small></span><input type="checkbox" name="pid" value="${h(x.id)}"${picked.has(x.id)?' checked':''}></label>`).join('');
+  const typeFields=p.type==='sale'
+   ?`<div class="pos-row">${field('折扣方式','<select name="mode"><option value="pct"'+(p.mode!=='price'?' selected':'')+'>打折（幾折）</option><option value="price"'+(p.mode==='price'?' selected':'')+'>特價（固定價格）</option></select>')}${field('折數或特價','<input name="value" inputmode="decimal" autocomplete="off" value="'+h(p.mode==='price'?p.value:foldOf(Number(p.value)||0))+'">','打折填 8 是 8 折、85 是 85 折；特價填價格')}</div>`
+   :p.type==='bundle'?`<div class="pos-row">${field('禮包價','<input name="price" inputmode="numeric" autocomplete="off" value="'+h(p.price)+'">')}<p class="pos-bundle-sum" id="pos-bundle-sum"></p></div>`:'';
+  openDialog({title:(id?'編輯':'新增')+promoTypeName(p.type),form:'promo',size:'wide',body:`<input type="hidden" name="id" value="${h(p.id)}"><input type="hidden" name="type" value="${h(p.type)}">
+${field('活動名稱','<input name="name" maxlength="30" autocomplete="off" value="'+h(p.name)+'" placeholder="'+(p.type==='bundle'?'例如 中秋送禮組':p.type==='bogo'?'例如 咖啡買一送一':'例如 晚間麵包 8 折')+'"'+(id?'':' autofocus')+'>')}
+${typeFields}
+<fieldset class="pos-fieldset"><legend>${p.type==='bundle'?'禮包內容（填每樣商品的數量）':'參加的商品'}</legend><input type="search" data-input="promo-q" autocomplete="off" placeholder="搜尋商品" aria-label="搜尋商品"><div class="pos-pick-rows">${rows||'<p class="pos-hint">還沒有商品</p>'}</div></fieldset>
+<fieldset class="pos-fieldset"><legend>活動期間（都可以留空）</legend><div class="pos-row">${field('開始','<input type="datetime-local" name="from" value="'+h(p.from)+'">')}${field('結束','<input type="datetime-local" name="to" value="'+h(p.to)+'">')}</div><div class="pos-row">${field('每天從','<input type="time" name="dayFrom" value="'+h(p.dayFrom)+'">')}${field('每天到','<input type="time" name="dayTo" value="'+h(p.dayTo)+'">','例如下午茶 14:00 到 17:00；可以跨午夜')}</div></fieldset>
+<label class="pos-check"><input type="checkbox" name="active" ${p.active!==false?'checked':''}>啟用這個活動</label>${errorBox}`,
+   footer:`${id?`<button type="button" class="pos-danger pos-left" data-act="promo-delete" data-id="${h(id)}">刪除</button>`:''}<button type="button" data-act="close-dialog">取消</button><button type="submit" class="pos-primary">儲存</button>`});
+  updateBundleSum();
+ }
+ function updateBundleSum(){
+  const box=$('#pos-bundle-sum');if(!box)return;
+  let value=0,count=0;
+  for(const input of $$('.pos-promo-qty',dialog)){const q=P.parseAmount(input.value)||0;value+=q*Number(input.dataset.price);count+=q;}
+  box.textContent=count?`共 ${count} 件，原價合計 ${money(value)}`:'還沒有選商品';
+ }
+ function savePromo(form){
+  const e=form.elements,type=e.type.value,id=e.id.value,base={type,name:e.name.value.trim(),active:e.active.checked,from:e.from.value,to:e.to.value,dayFrom:e.dayFrom.value,dayTo:e.dayTo.value};
+  if(base.from&&base.to&&P.parseLocal(base.from,false)>P.parseLocal(base.to,true))return formError(form,'結束時間要在開始時間之後');
+  if(!!base.dayFrom!==!!base.dayTo)return formError(form,'每天的時段請填開始和結束，或兩個都留空');
+  let promo;
+  if(type==='bundle'){
+   const items=S.products.map(x=>({pid:x.id,qty:P.parseAmount(e['qty-'+x.id]?.value||'0')})).filter(i=>i.qty>0);
+   if(items.some(i=>Number.isNaN(i.qty)))return formError(form,'數量請填整數');
+   if(!items.length)return formError(form,'請至少放一樣商品到禮包裡');
+   const price=P.parseAmount(e.price.value);
+   if(Number.isNaN(price))return formError(form,'請填禮包價');
+   promo={...base,name:base.name||'禮包',items,price};
+  }else{
+   const productIds=$$('input[name=pid]:checked',form).map(input=>input.value);
+   if(!productIds.length)return formError(form,'請至少選一樣商品');
+   promo={...base,productIds};
+   if(type==='sale'){
+    const mode=e.mode.value,value=mode==='price'?P.parseAmount(e.value.value):P.foldToPct(e.value.value);
+    if(Number.isNaN(value))return formError(form,mode==='price'?'特價請填數字':'折數請填 1 到 99，例如 8 或 85');
+    Object.assign(promo,{mode,value,name:base.name||(mode==='price'?'特價 '+money(value):'限時 '+foldOf(value)+' 折')});
+   }else promo.name=base.name||'買一送一';
+  }
+  const at=S.promos.findIndex(x=>x.id===id);
+  if(at>=0)S.promos[at]={...S.promos[at],...promo};else S.promos.push({id:uid(),...promo});
+  save('promos');closeDialog();toast('優惠活動已儲存');render();
+  return true;
  }
 
  // ---------- 交班 ----------
@@ -620,7 +793,7 @@ ${d.firstOrder?`<p class="pos-hint">單號 ${h(d.firstOrder)} 到 ${h(d.lastOrde
   const diff=r.countedCash==null?null:r.countedCash-d.expectedCash;
   openDialog({title:'日結報表 '+day,size:'wide',body:`<div class="pos-meta"><span>${h(S.settings.storeName)}</span>${r.done?`<span>日結時間 ${P.formatTime(r.closedAt)}</span><span>經手人 ${h(r.cashier)}</span>`:'<span class="pos-tag pos-tag-partial">尚未日結</span>'}${d.firstOrder?`<span>單號 ${h(d.firstOrder.slice(9))}–${h(d.lastOrder.slice(9))}</span>`:''}</div>
 ${r.stale?'<p class="pos-banner pos-banner-warn">這一天日結之後又有結帳或退款，這裡顯示的是最新數字。</p>':''}
-<div class="pos-tiles"><div class="pos-tile pos-tile-strong"><span>今日淨銷售額</span><b>${money(d.net)}</b></div><div class="pos-tile"><span>訂單數</span><b>${d.orders}</b></div><div class="pos-tile"><span>退款</span><b>${money(d.refunds)}</b></div><div class="pos-tile"><span>營業稅</span><b>${money(d.netTax)}</b></div></div>
+<div class="pos-tiles"><div class="pos-tile pos-tile-strong"><span>今日淨銷售額</span><b>${money(d.net)}</b></div><div class="pos-tile"><span>訂單數</span><b>${d.orders}</b></div><div class="pos-tile"><span>退款</span><b>${money(d.refunds)}</b></div><div class="pos-tile"><span>營業稅</span><b>${money(d.netTax)}</b></div>${d.giftQty?`<div class="pos-tile"><span>贈品</span><b>${d.giftQty} 件</b><small>成本 ${money(d.giftCost)}</small></div>`:''}</div>
 <section class="pos-card"><h3>各付款方式今日金額</h3><div class="pos-bars pos-methods">${rows.map(m=>`<div class="pos-bar-row"><span>${h(m.name)}<small>${m.count} 筆${m.refunds?`・已扣退款 ${money(m.refunds)}`:''}</small></span><div class="pos-bar-track"><i style="width:${Math.max(0,m.net)/max*100}%"></i></div><b>${money(m.net)}</b></div>`).join('')}<div class="pos-bar-row pos-bar-total"><span>合計</span><span></span><b>${money(d.net)}</b></div></div></section>
 <section class="pos-card"><h3>現金對帳</h3><dl class="pos-totals pos-totals-plain"><div><dt>開班零用金</dt><dd>${money(d.openingCash)}</dd></div><div><dt>現金銷售</dt><dd>${money(d.cashSales)}</dd></div><div><dt>現金退款</dt><dd>−${money(d.cashRefunds)}</dd></div><div><dt>現金存入／取出</dt><dd>${money(d.cashIn)}／−${money(d.cashOut)}</dd></div><div class="pos-total"><dt>應有現金</dt><dd>${money(d.expectedCash)}</dd></div>${diff==null?'<div><dt>實點現金</dt><dd>沒有點現金</dd></div>':`<div><dt>實點現金</dt><dd>${money(r.countedCash)}</dd></div><div><dt>差額</dt><dd>${diff===0?'金額相符':signed(diff)}</dd></div>`}</dl>${r.note?`<p class="pos-note">備註：${h(r.note)}</p>`:''}</section>`,
    footer:`<button type="button" data-act="export-close-day" data-day="${day}">下載 CSV</button><button type="button" data-act="print-close" data-day="${day}">列印報表</button><button type="button" class="pos-primary" data-act="close-dialog" autofocus>關閉</button>`});
@@ -629,7 +802,7 @@ ${r.stale?'<p class="pos-banner pos-banner-warn">這一天日結之後又有結�
   const r=closeRecord(day),d=r.summary,counted=r.countedCash,done=r.done?r:null;
   return `<article class="pos-receipt">${receiptHead(done?'日結表':'日結表（尚未日結）')}
 ${receiptRow('營業日',day)}${done?receiptRow('日結時間',P.formatTime(done.closedAt))+receiptRow('經手人',h(done.cashier)):receiptRow('列印時間',P.formatTime(Date.now()))}${d.firstOrder?receiptRow('單號',h(d.firstOrder.slice(9))+'–'+h(d.lastOrder.slice(9))):''}
-<hr>${receiptRow('訂單數',d.orders+' 筆')}${receiptRow('銷售件數',d.items+' 件')}${receiptRow('折扣與點數',money(d.discount))}${receiptRow('銷售金額',money(d.sales))}${receiptRow('退款',`−${money(d.refunds)}（${d.refundCount} 筆）`)}${receiptRow('淨銷售額',money(d.net),'r-total')}${receiptRow('營業稅',money(d.netTax))}
+<hr>${receiptRow('訂單數',d.orders+' 筆')}${receiptRow('銷售件數',d.items+' 件')}${receiptRow('折扣與點數',money(d.discount))}${receiptRow('銷售金額',money(d.sales))}${receiptRow('退款',`−${money(d.refunds)}（${d.refundCount} 筆）`)}${receiptRow('淨銷售額',money(d.net),'r-total')}${receiptRow('營業稅',money(d.netTax))}${d.giftQty?receiptRow('贈品',d.giftQty+' 件・成本 '+money(d.giftCost)):''}
 <hr><p class="r-name">各付款方式</p>${P.methodBreakdown(d,S.settings.methods).map(m=>receiptRow(h(m.name)+' '+m.count+' 筆',money(m.net))).join('')}${receiptRow('合計',money(d.net),'r-total')}
 <hr>${receiptRow('開班零用金',money(d.openingCash))}${receiptRow('現金銷售',money(d.cashSales))}${receiptRow('現金退款','−'+money(d.cashRefunds))}${receiptRow('現金存入',money(d.cashIn))}${receiptRow('現金取出','−'+money(d.cashOut))}${receiptRow('應有現金',money(d.expectedCash),'r-total')}
 ${counted==null?'':receiptRow('實點現金',money(counted))+receiptRow('差額',signed(counted-d.expectedCash))}
@@ -658,7 +831,7 @@ ${d.shifts.length?'<hr>'+d.shifts.map(s=>receiptRow(h(s.cashier)+' '+P.formatTim
   const maxMethod=Math.max(1,...r.methods.map(m=>Math.abs(m.net)));
   view.innerHTML=`<div class="pos-page"><div class="pos-page-head"><h2>報表</h2><div class="pos-page-tools"><button type="button" data-act="export-report">匯出商品銷售 CSV</button></div></div>
 <div class="pos-filters">${rangeChips(ui.reports.range,'reports-range')}<div class="pos-dates"><input type="date" aria-label="開始日期" data-change="reports-from" value="${from}" max="${today()}"><span>到</span><input type="date" aria-label="結束日期" data-change="reports-to" value="${to}" max="${today()}"></div></div>
-<div class="pos-tiles"><div class="pos-tile pos-tile-strong"><span>淨銷售額</span><b>${money(r.net)}</b></div><div class="pos-tile"><span>訂單數</span><b>${r.orders}</b></div><div class="pos-tile"><span>客單價</span><b>${money(r.average)}</b></div><div class="pos-tile"><span>毛利</span><b>${money(r.profit)}</b></div><div class="pos-tile"><span>退款</span><b>${money(r.refunds)}</b></div><div class="pos-tile"><span>營業稅</span><b>${money(r.netTax)}</b></div></div>
+<div class="pos-tiles"><div class="pos-tile pos-tile-strong"><span>淨銷售額</span><b>${money(r.net)}</b></div><div class="pos-tile"><span>訂單數</span><b>${r.orders}</b></div><div class="pos-tile"><span>客單價</span><b>${money(r.average)}</b></div><div class="pos-tile"><span>毛利</span><b>${money(r.profit)}</b></div><div class="pos-tile"><span>退款</span><b>${money(r.refunds)}</b></div><div class="pos-tile"><span>營業稅</span><b>${money(r.netTax)}</b></div>${r.giftQty?`<div class="pos-tile"><span>贈品</span><b>${r.giftQty} 件</b><small>成本 ${money(r.giftCost)}</small></div>`:''}</div>
 ${hasSales?`<section class="pos-card"><h3>${single?'各時段銷售金額':'每日銷售金額'}</h3>${barChart(chartRows,single?row=>row.hour+'時':row=>row.day.slice(5).replace('-','/'),single?row=>`${row.hour}:00–${row.hour}:59　${money(row.sales)}　${row.orders} 筆`:row=>`${row.day}　${money(row.sales)}　${row.orders} 筆`)}
 ${single?'':`<details class="pos-more-fields"><summary>用表格看每日數字</summary><div class="pos-table-wrap"><table class="pos-table"><thead><tr><th>日期</th><th class="num">訂單</th><th class="num">銷售</th><th class="num">退款</th></tr></thead><tbody>${r.days.map(d=>`<tr><td>${d.day}</td><td class="num">${d.orders}</td><td class="num">${money(d.sales)}</td><td class="num">${money(d.refunds)}</td></tr>`).join('')}</tbody></table></div></details>`}</section>
 <div class="pos-columns"><section class="pos-card"><h3>收款方式</h3><div class="pos-bars">${r.methods.map(m=>`<div class="pos-bar-row"><span>${h(m.name)}</span><div class="pos-bar-track"><i style="width:${Math.max(0,m.net)/maxMethod*100}%"></i></div><b>${money(m.net)}</b></div>`).join('')}</div></section>
@@ -675,6 +848,7 @@ ${single?'':`<details class="pos-more-fields"><summary>用表格看每日數字<
 <section class="pos-card"><h3>門市資料</h3><p class="pos-hint">會印在交易明細上方。</p><div class="pos-row">${field('門市名稱','<input name="storeName" maxlength="30" autocomplete="off" value="'+h(s.storeName)+'">')}${field('電話','<input name="storePhone" maxlength="20" autocomplete="off" value="'+h(s.storePhone)+'">')}</div><div class="pos-row">${field('地址','<input name="storeAddress" maxlength="60" autocomplete="off" value="'+h(s.storeAddress)+'">')}${field('統一編號','<input name="storeTaxId" inputmode="numeric" maxlength="8" autocomplete="off" value="'+h(s.storeTaxId)+'">')}</div>${field('明細結尾文字','<input name="receiptFooter" maxlength="40" autocomplete="off" value="'+h(s.receiptFooter)+'">')}</section>
 <section class="pos-card"><h3>金額與稅</h3><div class="pos-row">${field('幣別符號','<input name="currency" maxlength="4" autocomplete="off" value="'+h(s.currency)+'">')}${field('營業稅','<select name="taxMode"><option value="included"'+(s.taxMode==='included'?' selected':'')+'>售價已含稅</option><option value="added"'+(s.taxMode==='added'?' selected':'')+'>結帳時外加</option><option value="none"'+(s.taxMode==='none'?' selected':'')+'>不計稅</option></select>')}${field('稅率 %','<input name="taxRate" inputmode="decimal" autocomplete="off" value="'+h(s.taxRate)+'">')}</div></section>
 <section class="pos-card"><h3>會員集點</h3><div class="pos-row">${field('每消費多少元得 1 點','<input name="earnPer" inputmode="numeric" autocomplete="off" value="'+h(s.earnPer)+'">','填 0 表示不集點')}${field('1 點可折多少元','<input name="pointValue" inputmode="numeric" autocomplete="off" value="'+h(s.pointValue)+'">')}</div></section>
+<section class="pos-card"><h3>會員等級</h3><p class="pos-hint">依會員的累計消費自動升級。折扣是結帳時整張單再打的折扣，填 0 表示只顯示等級、不打折。名稱留空的列不使用。</p><div class="pos-level-rows">${[0,1,2,3,4].map(i=>{const l=P.cleanLevels(s.levels)[i]||{name:'',min:'',pct:''};return `<div class="pos-row pos-level-row">${field('等級名稱','<input name="level-name-'+i+'" maxlength="12" autocomplete="off" value="'+h(l.name)+'" placeholder="例如 銀卡會員">')}${field('累計消費滿','<input name="level-min-'+i+'" inputmode="numeric" autocomplete="off" value="'+h(l.min)+'">')}${field('整單折扣 %','<input name="level-pct-'+i+'" inputmode="decimal" autocomplete="off" value="'+h(l.pct)+'">','5 是 95 折')}</div>`;}).join('')}</div></section>
 <section class="pos-card"><h3>收銀與列印</h3><div class="pos-row">${field('收銀員名單','<textarea name="cashiers" rows="3" autocomplete="off">'+h(s.cashiers.join('\n'))+'</textarea>','每行一位，開班時選擇')}${field('現金以外的付款方式','<textarea name="methods" rows="3" autocomplete="off">'+h(s.methods.filter(m=>!m.cash).map(m=>m.name).join('\n'))+'</textarea>','每行一種；這裡只記錄收款方式，不會連接刷卡機或支付平台')}</div>
 <div class="pos-row">${field('明細紙寬','<select name="receiptWidth"><option value="58"'+(s.receiptWidth==58?' selected':'')+'>58 mm 熱感紙</option><option value="80"'+(s.receiptWidth==80?' selected':'')+'>80 mm 熱感紙</option><option value="210"'+(s.receiptWidth==210?' selected':'')+'>A4／一般印表機</option></select>')}${field('新商品的安全庫存','<input name="lowStock" inputmode="numeric" autocomplete="off" value="'+h(s.lowStock)+'">')}</div>
 <label class="pos-check"><input type="checkbox" name="autoPrint" ${s.autoPrint?'checked':''}>結帳後預設列印交易明細</label><label class="pos-check"><input type="checkbox" name="sound" ${s.sound?'checked':''}>加入商品與錯誤時發出提示音</label><label class="pos-check"><input type="checkbox" name="blockOversell" ${s.blockOversell?'checked':''}>庫存不足時不能結帳</label></section>
@@ -693,7 +867,16 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
    const methods=[{id:'cash',name:'現金',cash:true},...names.map(name=>({id:s.methods.find(m=>m.name===name&&!m.cash)?.id||P.DEFAULT_METHODS.find(m=>m.name===name)?.id||'m:'+name,name}))];
    const taxRate=num('taxRate','稅率'),earnPer=Math.round(num('earnPer','集點金額')),pointValue=Math.round(num('pointValue','點數價值',1)),lowStock=Math.round(num('lowStock','安全庫存'));
    if(taxRate>100)throw Error('稅率不能超過 100');
-   Object.assign(s,{storeName:e.storeName.value.trim()||'我的門市',storePhone:e.storePhone.value.trim(),storeAddress:e.storeAddress.value.trim(),storeTaxId:taxId,receiptFooter:e.receiptFooter.value.trim(),currency:e.currency.value.trim(),taxMode:e.taxMode.value,taxRate,earnPer,pointValue,lowStock,receiptWidth:Number(e.receiptWidth.value),autoPrint:e.autoPrint.checked,sound:e.sound.checked,blockOversell:e.blockOversell.checked,cashiers,methods});
+   const levels=[];
+   for(let i=0;i<5;i++){
+    const name=e['level-name-'+i].value.trim();if(!name)continue;
+    const min=P.parseAmount(e['level-min-'+i].value||'0'),pct=Number((e['level-pct-'+i].value||'0').normalize('NFKC'));
+    if(Number.isNaN(min))throw Error('「'+name+'」的累計消費請填數字');
+    if(!Number.isFinite(pct)||pct<0||pct>100)throw Error('「'+name+'」的折扣請填 0 到 100');
+    levels.push({name,min,pct});
+   }
+   if(new Set(levels.map(l=>l.name)).size!==levels.length)throw Error('會員等級名稱不能重複');
+   Object.assign(s,{storeName:e.storeName.value.trim()||'我的門市',storePhone:e.storePhone.value.trim(),storeAddress:e.storeAddress.value.trim(),storeTaxId:taxId,receiptFooter:e.receiptFooter.value.trim(),currency:e.currency.value.trim(),taxMode:e.taxMode.value,taxRate,earnPer,pointValue,lowStock,receiptWidth:Number(e.receiptWidth.value),autoPrint:e.autoPrint.checked,sound:e.sound.checked,blockOversell:e.blockOversell.checked,cashiers,methods,levels:P.cleanLevels(levels)});
    if(!cashiers.includes(s.cashier))s.cashier=cashiers[0];
   }catch(error){return formError(form,error.message);}
   save('settings');toast('設定已儲存');render();updateBar();
@@ -715,7 +898,7 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
  async function wipe(demoOnly){
   if(demoOnly){S.products=[];S.categories=[];S.members=[];S.settings.demo=false;}
   else{S.products=[];S.categories=[];S.members=[];S.settings={...P.DEFAULT_SETTINGS,methods:P.DEFAULT_METHODS.map(m=>({...m})),cashiers:['店長']};}
-  S.held=[];S.shifts=[];S.closes=[];S.seq=null;S.orders=[];S.moves=[];
+  S.held=[];S.shifts=[];S.closes=[];S.promos=[];S.seq=null;S.orders=[];S.moves=[];
   await commit([['orders','clear'],['moves','clear'],...kvOps(...KV)]);
   resetCart();closeDialog();toast(demoOnly?'示範資料已清除，可以開始建立自己的商品':'全部資料已清除');show(demoOnly?'products':'sale');
  }
@@ -726,6 +909,11 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   view:el=>show(el.dataset.view),
   cat:el=>{ui.cat=el.dataset.id;for(const chip of $$('#pos-cats .pos-chip'))chip.setAttribute('aria-pressed',chip.dataset.id===ui.cat);renderGrid();},
   add:el=>{const p=product(el.dataset.id);if(p)addProduct(p);},
+  'add-bundle':el=>addBundle(el.dataset.id),
+  'gift-mode':()=>{ui.giftMode=!ui.giftMode;toast(ui.giftMode?'贈品模式：點選的商品會以 0 元加入':'已結束贈品模式');renderSale();},
+  'gift-reason':el=>{const form=el.closest('form');form.elements.giftReason.value=el.dataset.reason;form.elements.gift.checked=true;},
+  'pay-continue':()=>openPay(true),
+  'bogo-add':el=>{const p=product(el.dataset.pid);if(p){const was=ui.giftMode;ui.giftMode=false;addProduct(p);ui.giftMode=was;}openPromoReminder();},
   qty:el=>{const line=cart.lines[el.dataset.i];if(!line)return;line.qty+=Number(el.dataset.d);if(line.qty<=0)cart.lines.splice(el.dataset.i,1);saveCart();renderCart();},
   'to-cart':()=>$('#pos-cart')?.scrollIntoView({behavior:'smooth',block:'start'}),
   'clear-cart':()=>confirmDialog('清空購物車','確定要把購物車裡的商品全部移除嗎？','clear-cart-yes','清空',true),
@@ -733,7 +921,7 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   'custom-item':()=>openDialog({title:'自訂金額品項',form:'custom',body:`${field('品名','<input name="name" maxlength="40" autocomplete="off" value="自訂品項">')}<div class="pos-row">${field('單價','<input name="price" inputmode="numeric" autocomplete="off" required autofocus>')}${field('數量','<input name="qty" inputmode="numeric" autocomplete="off" value="1">')}</div><p class="pos-hint">沒有建檔的商品可以先用這個方式結帳，不會扣庫存。</p>${errorBox}`,footer:'<button type="button" data-act="close-dialog">取消</button><button type="submit" class="pos-primary">加入購物車</button>'}),
   'edit-line':el=>{
    const i=Number(el.dataset.i),line=cart.lines[i];if(!line)return;
-   openDialog({title:line.name,form:'line',body:`<input type="hidden" name="i" value="${i}"><div class="pos-row">${field('數量','<input name="qty" inputmode="numeric" autocomplete="off" value="'+line.qty+'" autofocus>')}${field('單價','<input name="price" inputmode="numeric" autocomplete="off" value="'+line.price+'">','只改這一次，不會改商品售價')}</div>${discountFields(line.discount)}${field('備註（選填）','<input name="note" maxlength="30" autocomplete="off" value="'+h(line.note)+'">')}${errorBox}`,
+   openDialog({title:line.name,form:'line',body:`<input type="hidden" name="i" value="${i}"><div class="pos-row">${field('數量','<input name="qty" inputmode="numeric" autocomplete="off" value="'+line.qty+'" autofocus>')}${field('單價','<input name="price" inputmode="numeric" autocomplete="off" value="'+line.price+'">','只改這一次，不會改商品售價')}</div>${discountFields(line.discount)}<fieldset class="pos-fieldset"><legend>贈品（0 元銷貨）</legend><label class="pos-check"><input type="checkbox" name="gift" ${line.gift?'checked':''}>這一行當作贈品：金額 0 元，照樣扣庫存</label>${field('原因','<input name="giftReason" maxlength="20" autocomplete="off" value="'+h(line.giftReason||'')+'" placeholder="例如 門市送禮">')}<div class="pos-chips">${['門市送禮','公關品','試吃','客訴補償'].map(r=>`<button type="button" class="pos-chip" data-act="gift-reason" data-reason="${r}">${r}</button>`).join('')}</div></fieldset>${field('備註（選填）','<input name="note" maxlength="30" autocomplete="off" value="'+h(line.note)+'">')}${errorBox}`,
     footer:`<button type="button" class="pos-danger pos-left" data-act="line-remove" data-i="${i}">移除</button><button type="button" data-act="close-dialog">取消</button><button type="submit" class="pos-primary">套用</button>`});
   },
   'line-remove':el=>{cart.lines.splice(Number(el.dataset.i),1);saveCart();closeDialog();renderCart();},
@@ -745,7 +933,7 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   },
   'points-none':()=>{cart.pointsUse=0;saveCart();closeDialog();renderCart();},
   'pick-member':()=>openPickMember(),
-  'member-pick':el=>{cart.memberId=el.dataset.id;cart.pointsUse=0;saveCart();closeDialog();renderCart();},
+  'member-pick':el=>{const m=S.members.find(x=>x.id===el.dataset.id);closeDialog();if(m)attachMember(m);},
   'clear-member':()=>{cart.memberId='';cart.pointsUse=0;saveCart();renderCart();},
   'member-new-pick':()=>openMember('',true),
   hold:()=>{
@@ -762,6 +950,13 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   },
   'held-drop':el=>{S.held=S.held.filter(item=>item.id!==el.dataset.id);save('held');actions.held();renderCart();},
   pay:()=>openPay(),
+  // 付款方式一鍵切換；分開付款時，同一種方式只會出現在一列。
+  'pay-method':el=>{
+   const i=Number(el.dataset.i),row=pay.rows[i];if(!row||row.id===el.dataset.id)return;
+   const other=pay.rows.findIndex((r,k)=>k!==i&&r.id===el.dataset.id);
+   if(other>=0)pay.rows[other].id=row.id;
+   row.id=el.dataset.id;pay.active=i;renderPay();
+  },
   'pay-add':()=>{
    const s=paySettle(),used=new Set(pay.rows.map(r=>r.id)),next=S.settings.methods.find(m=>!used.has(m.id))||S.settings.methods[0];
    pay.rows.push({id:next.id,amount:s.due>0&&pay.rows[0].amount!==''?String(s.due):''});pay.active=pay.rows.length-1;renderPay();
@@ -793,6 +988,12 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   'stock-count':el=>openStock(el.dataset.id,'count'),
   'export-stock':()=>downloadCsv('pos-stock-'+today()+'.csv',[['品名','條碼','分類','庫存','安全庫存','成本','庫存成本'],...S.products.filter(p=>p.track).map(p=>[p.name,p.sku,catName(p.categoryId),p.stock,p.lowStock,p.cost||0,Math.max(0,p.stock)*(p.cost||0)])]),
   'export-moves':()=>downloadCsv('pos-stock-moves-'+today()+'.csv',[['時間','品名','類型','數量','結存','備註','單號'],...S.moves.map(m=>[P.formatTime(m.t),m.name,MOVE_LABEL[m.type]||m.type,m.qty,m.after,m.note,m.ref])]),
+  'promo-new':el=>openPromo('',el.dataset.type),
+  'promo-edit':el=>openPromo(el.dataset.id),
+  'promo-toggle':el=>{const p=S.promos.find(x=>x.id===el.dataset.id);if(!p)return;p.active=p.active===false;save('promos');toast(p.active?'活動已啟用':'活動已停用');render();},
+  'promo-delete':el=>{const p=S.promos.find(x=>x.id===el.dataset.id);if(p)confirmDialog('刪除優惠活動',`確定刪除「${p.name||'未命名的活動'}」嗎？已經結帳的訂單不受影響。`,'promo-delete-yes','刪除',true);dialog.dataset.target=el.dataset.id;},
+  'promo-delete-yes':()=>{const id=dialog.dataset.target;S.promos=S.promos.filter(p=>p.id!==id);save('promos');closeDialog();toast('優惠活動已刪除');render();},
+  'promo-qty':el=>{const input=el.parentElement.querySelector('input');input.value=Math.max(0,Math.min(99,(P.parseAmount(input.value)||0)+Number(el.dataset.d)));updateBundleSum();},
   'member-new':()=>openMember(''),
   'member-edit':el=>openMember(el.dataset.id),
   'member-history':el=>openMemberHistory(el.dataset.id),
@@ -834,11 +1035,12 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
    if(Number.isNaN(qty)||qty<1)return formError(form,'數量請填 1 以上的整數');
    if(Number.isNaN(price))return formError(form,'單價請填數字');
    if(d.error)return formError(form,d.error);
-   Object.assign(line,{qty,price,discount:d.discount,note:form.elements.note.value.trim()});saveCart();closeDialog();renderCart();
+   const gift=form.elements.gift.checked;
+   Object.assign(line,{qty,price,discount:gift?null:d.discount,note:form.elements.note.value.trim(),gift,giftReason:gift?(form.elements.giftReason.value.trim()||'贈品'):''});saveCart();closeDialog();renderCart();
   },
   'order-discount':form=>{const d=readDiscount(form);if(d.error)return formError(form,d.error);cart.discount=d.discount;saveCart();closeDialog();renderCart();},
   points:form=>{const n=P.parseAmount(form.elements.points.value);if(Number.isNaN(n))return formError(form,'點數請填 0 以上的整數');cart.pointsUse=Math.min(n,totals().maxPoints);saveCart();closeDialog();renderCart();},
-  pay:checkout,refund:doRefund,product:saveProduct,categories:saveCategories,stock:saveStock,member:saveMember,settings:saveSettings,
+  pay:checkout,refund:doRefund,promo:savePromo,product:saveProduct,categories:saveCategories,stock:saveStock,member:saveMember,settings:saveSettings,
   'shift-open':form=>{
    const opening=P.parseAmount(form.elements.opening.value||'0');if(Number.isNaN(opening))return formError(form,'零用金請填數字');
    S.settings.cashier=form.elements.cashier.value;S.shifts.push({id:uid(),openedAt:Date.now(),closedAt:0,cashier:S.settings.cashier,openingCash:opening,cashMoves:[],countedCash:null,note:''});
@@ -876,6 +1078,8 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   'stock-q':el=>{ui.stock.q=el.value;renderStockList();},
   'members-q':el=>{ui.members.q=el.value;renderMemberList();},
   'pick-q':el=>renderPickList(el.value),
+  'promo-q':el=>{const key=el.value.normalize('NFKC').trim().toLowerCase();for(const row of $$('.pos-pick-row',dialog))row.hidden=!!key&&!row.dataset.name.includes(key);},
+  'promo-bundle':()=>updateBundleSum(),
   'close-counted':el=>{
    const box=$('#pos-close-diff');if(!box)return;
    const expected=P.daySummary(S.orders,S.shifts,ui.close.day).expectedCash,counted=el.value.trim()===''?NaN:P.parseAmount(el.value);
@@ -890,7 +1094,6 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   }
  };
  const changes={
-  'pay-method':el=>{pay.rows[Number(el.dataset.i)].id=el.value;pay.active=Number(el.dataset.i);renderPay();},
   'products-cat':el=>{ui.products.cat=el.value;renderProductList();},
   'close-day':el=>{ui.close.day=el.value&&el.value<=today()?el.value:today();renderClose();},
   'reports-from':el=>{const [,to]=rangeDates(ui.reports.range,ui.reports);ui.reports={range:'custom',from:el.value||today(),to};renderReports();},
@@ -926,9 +1129,19 @@ ${errorBox}<div class="pos-form-actions"><button type="submit" class="pos-primar
   if(el.id==='pos-search'&&event.key==='Enter'){
    event.preventDefault();
    const text=el.value.trim();if(!text)return;
-   const byCode=P.findByCode(S.products,text),list=byCode?[byCode]:S.products.filter(p=>p.active!==false&&P.matchProduct(p,text));
+   const byCode=P.findByCode(S.products,text);
+   // 掃到的是會員卡號或手機號碼，就直接帶出會員。
+   const found=!byCode&&P.findMember(S.members,text);
+   if(found){attachMember(found);el.value='';ui.q='';renderGrid();return;}
+   const list=byCode?[byCode]:S.products.filter(p=>p.active!==false&&P.matchProduct(p,text));
    if(list.length===1){addProduct(list[0]);el.value='';ui.q='';renderGrid();}
    else{beep(false);toast(list.length?'有多個符合的商品，請直接點選':'找不到「'+text+'」，可以用「自訂金額」結帳',list.length?'warn':'error');el.select();}
+  }
+  if(el.id==='pos-pick-q'&&event.key==='Enter'){
+   event.preventDefault();
+   const text=el.value.trim(),exact=P.findMember(S.members,text),list=S.members.filter(m=>matchMember(m,text));
+   const m=exact||(list.length===1?list[0]:null);
+   if(m){closeDialog();attachMember(m);}else{beep(false);toast(list.length?'有多位符合的會員，請直接點選':'找不到這位會員，可以按「新增會員」','warn');el.select();}
   }
   if(event.target.classList?.contains('pos-tab')&&['ArrowLeft','ArrowRight'].includes(event.key)){
    const tabs=$$('.pos-tab',app),next=tabs[(tabs.indexOf(event.target)+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];

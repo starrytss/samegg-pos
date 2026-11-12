@@ -1,6 +1,6 @@
 {
   "name": "samegg-pos",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "山姆蛋 POS 收銀：門市收銀系統的 Windows 桌面版",
   "author": "SamEgg Lab",
@@ -35,11 +35,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
