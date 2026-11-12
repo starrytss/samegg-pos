@@ -82,13 +82,24 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # The release may already exist when it was published from the GitHub Releases page
+      # (which also creates the tag): then attach the files to it instead of creating another.
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/SamEggPOS-*.exe dist/SHA256SUMS.txt \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "山姆蛋 POS 收銀 $GITHUB_REF_NAME" \
-            --notes-file .github/release-notes.md
+          files=(dist/SamEggPOS-*.exe dist/SHA256SUMS.txt)
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+            body="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body)"
+            if [ -z "${body//[[:space:]]/}" ]; then
+              gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file .github/release-notes.md
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "山姆蛋 POS 收銀 $GITHUB_REF_NAME" \
+              --notes-file .github/release-notes.md
+          fi
