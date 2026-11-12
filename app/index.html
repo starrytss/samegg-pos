@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-Hant" class="pos-max pos-app-mode pos-desktop">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>門市 POS 收銀系統</title>
+<script src="theme.js"></script>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="style.css">
+<script src="pos-core.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body class="se-site" data-se-page="pos">
+<main id="main" class="pos-tool">
+<section class="pos-app" id="pos-app" aria-label="門市 POS 收銀系統">
+<div class="pos-bar"><div class="pos-tabs" role="tablist" aria-label="功能"><button type="button" class="pos-tab" role="tab" data-act="view" data-view="sale" aria-selected="true">收銀</button><button type="button" class="pos-tab" role="tab" data-act="view" data-view="orders" aria-selected="false" tabindex="-1">訂單</button><button type="button" class="pos-tab" role="tab" data-act="view" data-view="products" aria-selected="false" tabindex="-1">商品</button><button type="button" class="pos-tab" role="tab" data-act="view" data-view="stock" aria-selected="false" tabindex="-1">庫存</button><button type="button" class="pos-tab" role="tab" data-act="view" data-view="members" aria-selected="false" tabindex="-1">會員</button><button type="button" class="pos-tab" role="tab" data-act="view" data-view="shift" aria-selected="false" tabindex="-1">交班</button><button type="button" class="pos-tab" role="tab" data-act="view" data-view="close" aria-selected="false" tabindex="-1">日結</button><button type="button" class="pos-tab" role="tab" data-act="view" data-view="reports" aria-selected="false" tabindex="-1">報表</button><button type="button" class="pos-tab" role="tab" data-act="view" data-view="settings" aria-selected="false" tabindex="-1">設定</button></div><div class="pos-bar-side"><span class="pos-store" id="pos-store"></span><span class="pos-shift-chip" id="pos-shift-chip" data-open="false">尚未開班</span><span class="pos-clock" id="pos-clock"></span><button type="button" class="pos-max-button" id="pos-max" data-act="max" aria-pressed="false">全螢幕</button></div></div>
+<div class="pos-view" id="pos-view" role="tabpanel"><p class="pos-loading">正在準備收銀台……</p></div>
+<dialog class="pos-dialog" id="pos-dialog"></dialog>
+<div class="pos-toast" id="pos-toast" role="status" aria-live="polite"></div>
+
+</section>
+</main>
+</body>
+</html>

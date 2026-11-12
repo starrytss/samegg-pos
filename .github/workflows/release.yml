@@ -1,0 +1,94 @@
+name: Build Windows app
+
+# Every push to main and every pull request builds and checks the app.
+# Pushing a tag such as v1.0.0 also publishes the installers as a GitHub Release.
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, check and package
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Start the app once before packaging
+        run: npm run smoke
+
+      - name: Package
+        run: npm run dist
+
+      - name: Start the packaged app once
+        shell: pwsh
+        run: |
+          $env:SAMEGG_POS_SMOKE_LOG = Join-Path $env:RUNNER_TEMP 'smoke.txt'
+          $process = Start-Process -FilePath 'dist\win-unpacked\SamEgg POS.exe' -ArgumentList '--smoke-test' -Wait -PassThru
+          if (Test-Path $env:SAMEGG_POS_SMOKE_LOG) { Get-Content $env:SAMEGG_POS_SMOKE_LOG }
+          if ($process.ExitCode -ne 0) { Write-Error "Packaged app check failed with exit code $($process.ExitCode)"; exit 1 }
+
+      - name: Checksums
+        shell: bash
+        run: |
+          cd dist
+          sha256sum SamEggPOS-*.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Keep the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SamEggPOS-windows
+          path: |
+            dist/SamEggPOS-*.exe
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/SamEggPOS-*.exe dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "山姆蛋 POS 收銀 $GITHUB_REF_NAME" \
+            --notes-file .github/release-notes.md

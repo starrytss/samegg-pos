@@ -1,0 +1,59 @@
+{
+  "name": "samegg-pos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "山姆蛋 POS 收銀：門市收銀系統的 Windows 桌面版",
+  "author": "SamEgg Lab",
+  "homepage": "https://samtss.com/tools/pos/",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "smoke": "electron . --smoke-test",
+    "dist": "electron-builder --win --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.3.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.samegg.pos",
+    "productName": "SamEgg POS",
+    "copyright": "© SamEgg Lab",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "resolve.cjs",
+      "app/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "山姆蛋 POS 收銀",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "SamEggPOS-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "SamEggPOS-${version}-portable.exe"
+    }
+  }
+}
