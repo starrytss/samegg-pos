@@ -9,12 +9,28 @@
   {id:'mobile',name:'電子支付'},
   {id:'transfer',name:'轉帳'}
  ]);
+ // 員工權限：店長什麼都能做；收銀員能做哪些由設定決定。沒有開啟權限控管時大家都能做。
+ const PERMS=Object.freeze([
+  ['refund','退貨與退款'],['discount','折扣與改價'],['gift','贈品（0 元銷貨）'],['products','商品與優惠活動管理'],
+  ['stock','進貨、盤點與調撥'],['reports','查看報表與匯出'],['close','日結'],['settings','設定與資料備份']
+ ]);
+ const DEFAULT_CASHIER_PERMS=Object.freeze({refund:false,discount:true,gift:false,products:false,stock:true,reports:false,close:true,settings:false});
  const DEFAULT_SETTINGS=Object.freeze({
   storeName:'我的門市',storeAddress:'',storePhone:'',storeTaxId:'',receiptFooter:'謝謝光臨，歡迎再來',
   currency:'NT$',taxMode:'included',taxRate:5,
   earnPer:100,pointValue:1,
   receiptWidth:58,autoPrint:false,sound:true,blockOversell:false,lowStock:5,
   cashiers:['店長'],cashier:'店長',methods:DEFAULT_METHODS.map(m=>({...m})),demo:false,
+  // 員工（名稱、店長或收銀員、PIN 的雜湊值）與權限控管；staff 空的時候由 cashiers 產生。
+  staff:[],permsOn:false,cashierPerms:{...DEFAULT_CASHIER_PERMS},
+  // 收銀：現金快速鍵、結帳前的買一送一提醒、閒置幾分鐘自動鎖定（0 不鎖定）。
+  quickCash:true,promoReminder:true,lockAfter:0,
+  // 明細：門市資料下方多印一行、印會員點數餘額、印商品條碼。
+  receiptHeader:'',receiptShowPoints:true,receiptShowSku:false,
+  // 庫存與外觀：缺貨商品不顯示在收銀畫面、商品格大小（sm、md、lg）。
+  hideOut:false,tileSize:'md',
+  // 幾天沒備份就提醒（0 不提醒）與上次備份時間。
+  backupRemind:7,lastBackupAt:0,
   // 會員等級依累計消費決定；pct 是該等級的整單折扣（%），0 表示只顯示等級不打折。
   levels:[{name:'一般會員',min:0,pct:0},{name:'銀卡會員',min:5000,pct:5},{name:'金卡會員',min:20000,pct:10}]
  });
@@ -567,6 +583,52 @@
  }
  const brandsOf=products=>[...new Set((products||[]).map(p=>String(p.brand||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-Hant'));
 
+ // ---------- 員工與權限 ----------
+ const validPin=pin=>/^\d{4,6}$/.test(String(pin??''));
+ // PIN 只存雜湊值，避免設定檔或備份檔裡直接看得到；這是防止隨手誤用，不是銀行等級的保護。
+ function hashPin(pin){
+  let h=0x811c9dc5;
+  const text='samegg-pos:'+String(pin??'');
+  for(let round=0;round<64;round++)for(let i=0;i<text.length;i++){h^=text.charCodeAt(i)+round;h=Math.imul(h,0x01000193)>>>0;}
+  return 'h1:'+h.toString(16).padStart(8,'0');
+ }
+ const checkPin=(member,pin)=>!!member&&!!member.pin&&validPin(pin)&&member.pin===hashPin(pin);
+ // 整理員工名單：名稱不重複、角色只有 manager／cashier，至少一位店長（沒有的話第一位當店長）。
+ function cleanStaff(staff,cashiers){
+  const seen=new Set(),list=[];
+  const source=Array.isArray(staff)&&staff.length?staff:(cashiers||[]).map((name,i)=>({name,role:i===0?'manager':'cashier',pin:''}));
+  for(const item of source){
+   const name=String(item&&item.name||'').trim().slice(0,20);
+   if(!name||seen.has(name))continue;
+   seen.add(name);
+   list.push({name,role:item.role==='manager'?'manager':'cashier',pin:typeof item.pin==='string'&&/^h1:[0-9a-f]{8}$/.test(item.pin)?item.pin:''});
+  }
+  if(!list.length)list.push({name:'店長',role:'manager',pin:''});
+  if(!list.some(s=>s.role==='manager'))list[0].role='manager';
+  return list;
+ }
+ const cleanPerms=perms=>Object.fromEntries(PERMS.map(([key])=>[key,perms&&key in perms?!!perms[key]:DEFAULT_CASHIER_PERMS[key]]));
+ // 這位員工能不能做這件事。
+ function can(member,perm,settings){
+  const s=settings||{};
+  if(!s.permsOn)return true;
+  if(!member)return false;
+  if(member.role==='manager')return true;
+  return !!cleanPerms(s.cashierPerms)[perm];
+ }
+ // 開啟權限控管前要檢查：至少一位店長設了 PIN，才有人能授權。
+ function permsProblem(staff){
+  if(!staff.some(s=>s.role==='manager'&&s.pin))return '開啟權限控管前，至少要有一位店長設定 PIN';
+  return '';
+ }
+ // 距離上次備份幾天；沒有訂單或不提醒時回傳 0。
+ function backupDue(settings,firstOrderAt,now){
+  const days=int(settings&&settings.backupRemind);
+  if(days<=0||!firstOrderAt)return 0;
+  const since=Math.max(int(settings.lastBackupAt),int(firstOrderAt)),passed=Math.floor((now-since)/86400000);
+  return passed>=days?passed:0;
+ }
+
  // ---------- 搜尋 ----------
  function matchProduct(product,keyword){
   const key=String(keyword??'').normalize('NFKC').trim().toLowerCase();
@@ -579,7 +641,7 @@
  }
  const isLowStock=(product,qty=product.stock)=>!!product.track&&int(qty)<=int(product.lowStock);
 
- const api={DEFAULT_SETTINGS,DEFAULT_METHODS,STATUS,PRODUCT_COLUMNS,int,clamp,parseAmount,formatMoney,dateKey,formatTime,dayStart,addDays,allocate,validTaxId,normalizeCarrier,validCarrier,ean13,normalizeCode,discountAmount,discountLabel,foldToPct,lineTotals,computeCart,cleanLevels,levelOf,findMember,parseLocal,promoState,PROMO_STATE,saleLabel,activePromos,promoFor,bundleLine,settlePayments,cashSuggestions,nextOrderId,buildOrder,refundedTotal,orderNet,cashReceived,paymentBreakdown,refundQuote,applyRefund,shiftSummary,daySummary,methodBreakdown,dayReportRows,dayChanged,closesToRows,report,toCsv,parseCsv,productsToRows,productsFromRows,ordersToRows,orderLinesToRows,matchProduct,findByCode,isLowStock,stockAt,totalStock,addStock,migrateStocks,transferStock,filterStock,brandsOf};
+ const api={PERMS,DEFAULT_CASHIER_PERMS,validPin,hashPin,checkPin,cleanStaff,cleanPerms,can,permsProblem,backupDue,DEFAULT_SETTINGS,DEFAULT_METHODS,STATUS,PRODUCT_COLUMNS,int,clamp,parseAmount,formatMoney,dateKey,formatTime,dayStart,addDays,allocate,validTaxId,normalizeCarrier,validCarrier,ean13,normalizeCode,discountAmount,discountLabel,foldToPct,lineTotals,computeCart,cleanLevels,levelOf,findMember,parseLocal,promoState,PROMO_STATE,saleLabel,activePromos,promoFor,bundleLine,settlePayments,cashSuggestions,nextOrderId,buildOrder,refundedTotal,orderNet,cashReceived,paymentBreakdown,refundQuote,applyRefund,shiftSummary,daySummary,methodBreakdown,dayReportRows,dayChanged,closesToRows,report,toCsv,parseCsv,productsToRows,productsFromRows,ordersToRows,orderLinesToRows,matchProduct,findByCode,isLowStock,stockAt,totalStock,addStock,migrateStocks,transferStock,filterStock,brandsOf};
  if(typeof module==='object'&&module.exports)module.exports=api;
  else root.SamEggPos=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

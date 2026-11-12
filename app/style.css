@@ -379,6 +379,59 @@ body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-login-go{min-wid
  body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-login-go{flex:1;min-width:0}
 }
 
+/* ---------- 設定分頁、員工權限、付款方式、商品格大小 ---------- */
+body.se-site.se-site[data-se-page=pos] .pos-set-layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}
+body.se-site.se-site[data-se-page=pos] .pos-set-nav{position:sticky;top:0;display:flex;flex-direction:column;gap:4px;padding:8px;border:1px solid var(--pos-line);border-radius:var(--pos-radius);background:var(--pos-surface);box-shadow:var(--pos-shadow-sm)}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-set-tab{justify-content:flex-start;min-height:48px;padding:0 14px;border-color:transparent;background:transparent;font-size:15px;font-weight:700;color:var(--se-muted);text-align:left}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-set-tab[aria-current=page]{background:var(--pos-accent-soft);color:var(--pos-accent)}
+@media(hover:hover){body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-set-tab:not([aria-current=page]):hover{background:var(--pos-surface-2);color:var(--se-ink)}}
+body.se-site.se-site[data-se-page=pos] .pos-set-body{display:flex;flex-direction:column;gap:18px;min-width:0}
+body.se-site.se-site[data-se-page=pos] .pos-set-sub{margin:6px 0 0;font-size:15px;font-weight:800;color:var(--se-ink)}
+body.se-site.se-site[data-se-page=pos] .pos-check>span{display:flex;flex-direction:column;gap:2px;min-width:0}
+body.se-site.se-site[data-se-page=pos] .pos-check>span small{font-size:13px;font-weight:500;line-height:1.5;color:var(--se-muted)}
+body.se-site.se-site[data-se-page=pos] .pos-card-danger{border-color:var(--se-error-bg)}
+body.se-site.se-site[data-se-page=pos] .pos-method-rows,body.se-site.se-site[data-se-page=pos] .pos-staff-rows{display:flex;flex-direction:column;gap:10px}
+body.se-site.se-site[data-se-page=pos] .pos-method-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--pos-line);border-radius:var(--pos-radius-sm);background:var(--pos-surface)}
+body.se-site.se-site[data-se-page=pos] .pos-method-row.is-off{background:var(--pos-surface-2)}
+body.se-site.se-site[data-se-page=pos] .pos-method-row.is-off .pos-method-icon{opacity:.45}
+body.se-site.se-site[data-se-page=pos] .pos-method-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--pos-accent-soft);color:var(--pos-accent)}
+body.se-site.se-site[data-se-page=pos] .pos-method-move{display:flex;gap:4px}
+body.se-site.se-site[data-se-page=pos] .pos-method-row .pos-check{min-height:40px}
+body.se-site.se-site[data-se-page=pos] .pos-staff-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.1fr) auto;align-items:end;gap:12px;padding:12px;border:1px solid var(--pos-line);border-radius:var(--pos-radius-sm)}
+body.se-site.se-site[data-se-page=pos] .pos-staff-new{border-style:dashed}
+body.se-site.se-site[data-se-page=pos] .pos-staff-checks{display:flex;flex-wrap:wrap;gap:0 14px}
+body.se-site.se-site[data-se-page=pos] .pos-perm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:2px 16px}
+body.se-site.se-site[data-se-page=pos] .pos-about{display:flex;flex-direction:column;gap:0;margin:0}
+body.se-site.se-site[data-se-page=pos] .pos-about>div{display:grid;grid-template-columns:120px minmax(0,1fr);gap:12px;padding:12px 0;border-bottom:1px solid var(--pos-line)}
+body.se-site.se-site[data-se-page=pos] .pos-about dt{font-weight:800;color:var(--se-muted)}
+body.se-site.se-site[data-se-page=pos] .pos-about dd{margin:0;color:var(--se-ink);line-height:1.6}
+body.se-site.se-site[data-se-page=pos] .pos-banner-action{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px}
+body.se-site.se-site[data-se-page=pos] .pos-banner-action p{margin:0}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-chip small{margin-left:6px;font-size:12px;font-weight:600;opacity:.75}
+body.se-site.se-site[data-se-page=pos] .pos-login-pin{max-width:320px;margin-top:12px}
+body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-store .pos-store-who{flex:none;padding:2px 10px;border-radius:999px;background:var(--pos-surface-2);font-size:13px;font-weight:700;color:var(--se-muted)}
+body.se-site.se-site[data-se-page=pos] .pos-app[data-tiles=sm] .pos-grid{grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:8px}
+body.se-site.se-site[data-se-page=pos] main .pos-app[data-tiles=sm] button.pos-item{min-height:116px;padding:10px}
+body.se-site.se-site[data-se-page=pos] .pos-app[data-tiles=lg] .pos-grid{grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+body.se-site.se-site[data-se-page=pos] main .pos-app[data-tiles=lg] button.pos-item{min-height:176px;font-size:17px}
+@media(max-width:1023px){
+ body.se-site.se-site[data-se-page=pos] .pos-set-layout{grid-template-columns:minmax(0,1fr)}
+ body.se-site.se-site[data-se-page=pos] .pos-set-nav{position:static;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:6px}
+ body.se-site.se-site[data-se-page=pos] .pos-set-nav::-webkit-scrollbar{display:none}
+ body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-set-tab{flex:none;min-height:44px;white-space:nowrap}
+}
+@media(max-width:739px){
+ body.se-site.se-site[data-se-page=pos] .pos-method-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+ body.se-site.se-site[data-se-page=pos] .pos-method-row>input{flex:1 1 180px;min-width:0}
+ body.se-site.se-site[data-se-page=pos] .pos-method-move{margin-left:auto}
+ body.se-site.se-site[data-se-page=pos] .pos-staff-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+ body.se-site.se-site[data-se-page=pos] .pos-staff-row>:first-child{grid-column:1/-1}
+ body.se-site.se-site[data-se-page=pos] .pos-staff-checks{grid-column:1/-1}
+ body.se-site.se-site[data-se-page=pos] .pos-about>div{grid-template-columns:minmax(0,1fr);gap:2px}
+ body.se-site.se-site[data-se-page=pos] main .pos-app button.pos-store .pos-store-who{display:none}
+ body.se-site.se-site[data-se-page=pos] .pos-app[data-tiles=lg] .pos-grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
+}
+
 /* ---------- 網頁版試用提醒（只在網站頁面，App 與桌面版不會顯示） ---------- */
 body.se-site.se-site[data-se-page=pos] .pos-trial{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px 24px;padding:20px 24px;border:1.5px solid var(--v3-line);border-radius:12px;background:var(--se-warning-bg);box-shadow:4px 4px 0 var(--v3-shadow)}
 body.se-site.se-site[data-se-page=pos] .pos-trial-text{flex:1 1 420px;min-width:0}
