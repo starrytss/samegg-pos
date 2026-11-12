@@ -475,8 +475,16 @@ ${taxLabel?`<div class="pos-tax"><dt>${taxLabel}</dt><dd>${money(t.tax)}</dd></d
   if(rows.some(r=>Number.isNaN(r.amount)))return {ok:false,error:'金額請填數字',paid:0,due:t.total,change:0,payments:[]};
   return P.settlePayments(t.total,rows);
  }
+ // 應收 0 元（全部是贈品）：不顯示付款方式、快速鍵和數字鍵盤，直接完成出貨。
+ function renderFreePay(t){
+  openDialog({title:'結帳',form:'pay',body:`<div class="pos-pay-free"><span class="pos-pay-free-icon">${icon('gift')}</span><div><span class="pos-pay-free-label">應收</span><b>${money(0)}</b><p>${t.giftQty?`${t.giftQty} 件贈品，價值 ${money(t.giftValue)}。`:'這張單的金額是 0 元。'}不用收款，按「完成出貨」就會記錄訂單並扣庫存。</p></div></div>
+<input type="hidden" name="taxId" value=""><input type="hidden" name="carrier" value="">${field('訂單備註（選填）','<input name="note" maxlength="60" autocomplete="off" placeholder="例如 送給哪位客人、哪個活動">')}
+<label class="pos-check"><input type="checkbox" name="print" ${pay.print?'checked':''}>完成後列印交易明細</label>${errorBox}`,
+   footer:'<button type="button" data-act="close-dialog">取消</button><button type="submit" class="pos-primary" autofocus>完成出貨（0 元）</button>'});
+ }
  function renderPay(){
   const t=totals(),keep=dialog.open?{taxId:$('[name=taxId]',dialog)?.value||'',carrier:$('[name=carrier]',dialog)?.value||'',note:$('[name=note]',dialog)?.value||''}:{taxId:'',carrier:'',note:''};
+  if(t.total===0)return renderFreePay(t);
   const cashRow=pay.rows.findIndex(r=>methodById(r.id).cash);
   openDialog({title:'結帳',form:'pay',size:'wide',body:`<div class="pos-pay-layout"><div class="pos-pay-main">
 <p class="pos-pay-total"><span>應收</span><b>${money(t.total)}</b></p>
@@ -1166,8 +1174,9 @@ ${check('autoPrint','結帳後預設列印',s.autoPrint,'結帳畫面的「列�
   'custom-item':()=>openDialog({title:'自訂金額品項',form:'custom',body:`${field('品名','<input name="name" maxlength="40" autocomplete="off" value="自訂品項">')}<div class="pos-row">${field('單價','<input name="price" inputmode="numeric" autocomplete="off" required autofocus>')}${field('數量','<input name="qty" inputmode="numeric" autocomplete="off" value="1">')}</div><p class="pos-hint">沒有建檔的商品可以先用這個方式結帳，不會扣庫存。</p>${errorBox}`,footer:'<button type="button" data-act="close-dialog">取消</button><button type="submit" class="pos-primary">加入購物車</button>'}),
   'edit-line':el=>{
    const i=Number(el.dataset.i),line=cart.lines[i];if(!line)return;
-   openDialog({title:line.name,form:'line',body:`<input type="hidden" name="i" value="${i}"><div class="pos-row">${field('數量','<input name="qty" inputmode="numeric" autocomplete="off" value="'+line.qty+'" autofocus>')}${field('單價','<input name="price" inputmode="numeric" autocomplete="off" value="'+line.price+'">','只改這一次，不會改商品售價')}</div>${discountFields(line.discount)}<fieldset class="pos-fieldset"><legend>贈品（0 元銷貨）</legend><label class="pos-check"><input type="checkbox" name="gift" ${line.gift?'checked':''}>這一行當作贈品：金額 0 元，照樣扣庫存</label>${field('原因','<input name="giftReason" maxlength="20" autocomplete="off" value="'+h(line.giftReason||'')+'" placeholder="例如 門市送禮">')}<div class="pos-chips">${['門市送禮','公關品','試吃','客訴補償'].map(r=>`<button type="button" class="pos-chip" data-act="gift-reason" data-reason="${r}">${r}</button>`).join('')}</div></fieldset>${field('備註（選填）','<input name="note" maxlength="30" autocomplete="off" value="'+h(line.note)+'">')}${errorBox}`,
+   openDialog({title:line.name,form:'line',body:`<input type="hidden" name="i" value="${i}"><div class="pos-row">${field('數量','<input name="qty" inputmode="numeric" autocomplete="off" value="'+line.qty+'" autofocus>')}${field('單價','<input name="price" inputmode="numeric" autocomplete="off" value="'+line.price+'">','只改這一次，不會改商品售價')}</div>${discountFields(line.discount)}<fieldset class="pos-fieldset"><legend>贈品（0 元銷貨）</legend><label class="pos-check"><input type="checkbox" name="gift" data-change="line-gift" ${line.gift?'checked':''}>這一行當作贈品：金額 0 元，照樣扣庫存</label><p class="pos-line-free" hidden></p>${field('原因','<input name="giftReason" maxlength="20" autocomplete="off" value="'+h(line.giftReason||'')+'" placeholder="例如 門市送禮">')}<div class="pos-chips">${['門市送禮','公關品','試吃','客訴補償'].map(r=>`<button type="button" class="pos-chip" data-act="gift-reason" data-reason="${r}">${r}</button>`).join('')}</div></fieldset>${field('備註（選填）','<input name="note" maxlength="30" autocomplete="off" value="'+h(line.note)+'">')}${errorBox}`,
     footer:`<button type="button" class="pos-danger pos-left" data-act="line-remove" data-i="${i}">移除</button><button type="button" data-act="close-dialog">取消</button><button type="submit" class="pos-primary">套用</button>`});
+   changes['line-gift']($('[name=gift]',dialog));
   },
   'line-remove':el=>{cart.lines.splice(Number(el.dataset.i),1);saveCart();closeDialog();renderCart();},
   fold:el=>{const form=el.closest('form');form.elements.fold.value=el.dataset.fold;form.elements.off.value='';for(const chip of $$('[data-act=fold]',form))chip.setAttribute('aria-pressed',chip===el);},
@@ -1363,6 +1372,11 @@ ${check('autoPrint','結帳後預設列印',s.autoPrint,'結帳畫面的「列�
  };
  const changes={
   'products-cat':el=>{ui.products.cat=el.value;renderProductList();},
+  'line-gift':el=>{
+   const form=el.form,on=el.checked,box=$('.pos-line-free',form),qty=P.parseAmount(form.elements.qty.value)||1,price=P.parseAmount(form.elements.price.value)||0;
+   form.elements.price.disabled=on;const discount=$('.pos-fieldset',form);if(discount)discount.disabled=on;
+   box.hidden=!on;box.innerHTML=on?`這一行改成 <b>${money(0)}</b>（原價 ${money(qty*price)}），應收會扣掉這一行。`:'';
+  },
   'backup-remind':el=>{S.settings.backupRemind=Number(el.value)||0;save('settings');toast('已更新備份提醒');},
   'stock-store':el=>{ui.stock.store=el.value;renderStock();},
   'stock-cat':el=>{ui.stock.cat=el.value;renderStock();},

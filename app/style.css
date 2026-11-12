@@ -432,6 +432,16 @@ body.se-site.se-site[data-se-page=pos] main .pos-app[data-tiles=lg] button.pos-i
  body.se-site.se-site[data-se-page=pos] .pos-app[data-tiles=lg] .pos-grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
 }
 
+/* ---------- 0 元結帳（全部是贈品） ---------- */
+body.se-site.se-site[data-se-page=pos] .pos-pay-free{display:flex;align-items:center;gap:18px;padding:20px 22px;border-radius:var(--pos-radius);background:var(--pos-gift-bg);color:var(--pos-gift-fg)}
+body.se-site.se-site[data-se-page=pos] .pos-pay-free-icon{display:grid;place-items:center;flex:none;width:64px;height:64px;border-radius:18px;background:var(--pos-surface)}
+body.se-site.se-site[data-se-page=pos] .pos-pay-free-icon .pos-ico{width:34px;height:34px}
+body.se-site.se-site[data-se-page=pos] .pos-pay-free b{display:block;font-size:40px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+body.se-site.se-site[data-se-page=pos] .pos-pay-free-label{font-size:15px;font-weight:700}
+body.se-site.se-site[data-se-page=pos] .pos-pay-free p{margin:6px 0 0;font-size:15px;line-height:1.6;color:var(--se-ink)}
+body.se-site.se-site[data-se-page=pos] .pos-line-free{margin:0;padding:10px 14px;border-radius:var(--pos-radius-sm);background:var(--pos-gift-bg);color:var(--pos-gift-fg);font-size:14px;font-weight:600}
+body.se-site.se-site[data-se-page=pos] .pos-fieldset:disabled{opacity:.45}
+
 /* ---------- 網頁版試用提醒（只在網站頁面，App 與桌面版不會顯示） ---------- */
 body.se-site.se-site[data-se-page=pos] .pos-trial{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px 24px;padding:20px 24px;border:1.5px solid var(--v3-line);border-radius:12px;background:var(--se-warning-bg);box-shadow:4px 4px 0 var(--v3-shadow)}
 body.se-site.se-site[data-se-page=pos] .pos-trial-text{flex:1 1 420px;min-width:0}
