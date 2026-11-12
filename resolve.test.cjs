@@ -1,6 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path');
 const {resolveAsset,START,MIME}=require('./resolve.cjs');
-const root=path.join(path.sep,'opt','SamEgg POS','resources','app');
+// path.resolve adds the drive letter on Windows (D:\opt\...), so expected paths match what resolveAsset returns.
+const root=path.resolve(path.sep,'opt','SamEgg POS','resources','app');
 const inside=file=>path.join(root,file);
 
 test('addresses inside app://pos/ map to files in the bundle',()=>{
